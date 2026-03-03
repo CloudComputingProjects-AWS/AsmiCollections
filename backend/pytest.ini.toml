@@ -1,0 +1,16 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short --strict-markers"
+markers = [
+    "asyncio: async test",
+    "slow: slow-running test",
+    "integration: integration test requiring DB",
+    "e2e: end-to-end test",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]

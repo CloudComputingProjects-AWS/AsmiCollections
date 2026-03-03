@@ -1,0 +1,656 @@
+"""
+Invoice Service — Core business logic for invoice & credit note generation.
+Phase 9 — V2.5 Blueprint
+
+Handles:
+  - Invoice creation from confirmed orders
+  - Credit note creation from refunds
+  - PDF generation and S3 upload
+  - GST summary report generation
+  - Invoice listing and retrieval
+"""
+
+import logging
+from datetime import datetime, timezone
+from decimal import Decimal
+from uuid import UUID
+
+from sqlalchemy import and_, func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.models.models import (
+    CreditNote,
+    Invoice,
+    InvoiceLineItem,
+    Order,
+    OrderItem,
+    Refund,
+    Return,
+)
+from app.services.invoice_sequence_service import (
+    get_current_financial_year,
+    get_next_invoice_number,
+)
+from app.utils.gst_utils import (
+    determine_supply_type,
+    get_state_code,
+    split_tax_components,
+)
+from app.utils.number_to_words import amount_in_words
+from app.utils.pdf_generator import (
+    html_to_pdf,
+    render_credit_note_html,
+    render_invoice_html,
+    upload_pdf_to_s3,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# ──────────────── Seller Configuration ────────────────
+# In production, load from env/config/DB
+import os
+
+SELLER_CONFIG = {
+    "name": os.getenv("SELLER_NAME", "YourStore Pvt Ltd"),
+    "gstin": os.getenv("SELLER_GSTIN", "19AAACR0000A1Z5"),
+    "address": os.getenv("SELLER_ADDRESS", "123 Commerce Street, Kolkata, West Bengal 700001"),
+    "state": os.getenv("SELLER_STATE", "West Bengal"),
+    "state_code": os.getenv("SELLER_STATE_CODE", "19"),
+}
+
+
+class InvoiceServiceError(Exception):
+    def __init__(self, message: str, status_code: int = 400):
+        self.message = message
+        self.status_code = status_code
+        super().__init__(message)
+
+
+class InvoiceService:
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    # ──────────────── Generate Invoice ────────────────
+
+    async def generate_invoice(
+        self,
+        order_id: UUID,
+        invoice_type: str = "tax_invoice",
+    ) -> Invoice:
+        """
+        Generate a GST-compliant invoice for a confirmed order.
+        Called automatically when order transitions to 'confirmed'.
+        """
+        # 1. Load order with items
+        result = await self.db.execute(
+            select(Order)
+            .options(selectinload(Order.items))
+            .where(Order.id == order_id)
+        )
+        order = result.scalar_one_or_none()
+        if not order:
+            raise InvoiceServiceError(f"Order {order_id} not found", 404)
+
+        # 2. Check if invoice already exists
+        existing = await self.db.execute(
+            select(Invoice).where(
+                and_(
+                    Invoice.order_id == order_id,
+                    Invoice.invoice_type == invoice_type,
+                )
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise InvoiceServiceError(
+                f"Invoice already exists for order {order.order_number}"
+            )
+
+        # 3. Get next sequential invoice number (atomic)
+        invoice_number = await get_next_invoice_number(
+            self.db, document_type="invoice"
+        )
+
+        # 4. Determine supply type
+        supply_type = determine_supply_type(
+            seller_state=SELLER_CONFIG["state"],
+            buyer_state=order.shipping_state,
+            buyer_country=order.shipping_country,
+        )
+
+        buyer_state_code = get_state_code(order.shipping_state) if order.shipping_state else None
+
+        # 5. Create invoice record
+        invoice = Invoice(
+            order_id=order.id,
+            invoice_number=invoice_number,
+            invoice_type=invoice_type,
+            # Seller
+            seller_name=SELLER_CONFIG["name"],
+            seller_gstin=SELLER_CONFIG["gstin"],
+            seller_address=SELLER_CONFIG["address"],
+            seller_state=SELLER_CONFIG["state"],
+            seller_state_code=SELLER_CONFIG["state_code"],
+            # Buyer
+            buyer_name=order.shipping_name or "Customer",
+            buyer_address=order.shipping_address_text or "",
+            buyer_gstin=None,  # B2C only
+            buyer_state=order.shipping_state,
+            buyer_state_code=buyer_state_code,
+            # Amounts (mirror from order)
+            subtotal=order.subtotal,
+            cgst_amount=order.cgst_amount or Decimal("0"),
+            sgst_amount=order.sgst_amount or Decimal("0"),
+            igst_amount=order.igst_amount or Decimal("0"),
+            shipping_fee=order.shipping_fee or Decimal("0"),
+            discount_amount=order.discount_amount or Decimal("0"),
+            grand_total=order.grand_total,
+            currency=order.currency or "INR",
+            # Supply
+            place_of_supply=f"{order.shipping_state} ({buyer_state_code})" if order.shipping_state else None,
+            supply_type=supply_type,
+            generated_at=datetime.now(timezone.utc),
+        )
+        self.db.add(invoice)
+        await self.db.flush()
+
+        # 6. Create line items from order items (GST-INCLUSIVE back-calculation)
+        invoice_cgst_total = Decimal("0")
+        invoice_sgst_total = Decimal("0")
+        invoice_igst_total = Decimal("0")
+        invoice_taxable_total = Decimal("0")
+
+        for item in order.items:
+            tax_rate = item.tax_rate or Decimal("0")
+            inclusive_amount = item.unit_price * item.quantity  # This IS the GST-inclusive price
+            tax_split = split_tax_components(inclusive_amount, tax_rate, supply_type)
+
+            taxable_base = tax_split["taxable_base"]
+            line_cgst = tax_split["cgst_amount"]
+            line_sgst = tax_split["sgst_amount"]
+            line_igst = tax_split["igst_amount"]
+
+            line_item = InvoiceLineItem(
+                invoice_id=invoice.id,
+                order_item_id=item.id,
+                description=f"{item.product_title_snapshot}"
+                            + (f" - {item.size_snapshot}" if item.size_snapshot else "")
+                            + (f"/{item.color_snapshot}" if item.color_snapshot else ""),
+                hsn_code=item.hsn_code_snapshot,
+                quantity=item.quantity,
+                unit_price=item.unit_price,
+                taxable_amount=taxable_base,
+                cgst_rate=tax_split["cgst_rate"],
+                cgst_amount=line_cgst,
+                sgst_rate=tax_split["sgst_rate"],
+                sgst_amount=line_sgst,
+                igst_rate=tax_split["igst_rate"],
+                igst_amount=line_igst,
+                total_amount=inclusive_amount,  # Inclusive price IS the total (tax already inside)
+            )
+            self.db.add(line_item)
+
+            # Accumulate for invoice-level totals
+            invoice_cgst_total += line_cgst
+            invoice_sgst_total += line_sgst
+            invoice_igst_total += line_igst
+            invoice_taxable_total += taxable_base
+
+        # 6b. Add shipping fee as separate line item (if applicable)
+        shipping_fee = order.shipping_fee or Decimal("0")
+        if shipping_fee > 0:
+            # Shipping is typically GST-exempt for e-commerce; shown as separate line
+            shipping_line = InvoiceLineItem(
+                invoice_id=invoice.id,
+                order_item_id=None,
+                description="Shipping & Handling",
+                hsn_code="9965",  # SAC code for transportation services
+                quantity=1,
+                unit_price=shipping_fee,
+                taxable_amount=shipping_fee,
+                cgst_rate=Decimal("0"),
+                cgst_amount=Decimal("0"),
+                sgst_rate=Decimal("0"),
+                sgst_amount=Decimal("0"),
+                igst_rate=Decimal("0"),
+                igst_amount=Decimal("0"),
+                total_amount=shipping_fee,
+            )
+            self.db.add(shipping_line)
+
+        await self.db.flush()
+
+        # 6c. Update invoice-level tax totals from computed line items
+        invoice.subtotal = invoice_taxable_total
+        invoice.cgst_amount = invoice_cgst_total
+        invoice.sgst_amount = invoice_sgst_total
+        invoice.igst_amount = invoice_igst_total
+        invoice.grand_total = invoice_taxable_total + invoice_cgst_total + invoice_sgst_total + invoice_igst_total + shipping_fee - (order.discount_amount or Decimal("0"))
+        await self.db.flush()
+
+        # 7. Generate PDF
+        try:
+            pdf_url = await self._generate_invoice_pdf(invoice, order)
+            invoice.pdf_url = pdf_url
+            await self.db.flush()
+        except Exception as e:
+            logger.error(f"PDF generation failed for {invoice_number}: {e}")
+            # Invoice record is still created — PDF can be regenerated later
+
+        logger.info(f"Invoice {invoice_number} generated for order {order.order_number}")
+        return invoice
+
+    async def _generate_invoice_pdf(self, invoice: Invoice, order: Order) -> str:
+        """Render invoice HTML → PDF → upload to S3."""
+        # Load line items
+        result = await self.db.execute(
+            select(InvoiceLineItem).where(InvoiceLineItem.invoice_id == invoice.id)
+        )
+        line_items = result.scalars().all()
+
+        # Build template data
+        data = {
+            "invoice_number": invoice.invoice_number,
+            "invoice_type": invoice.invoice_type,
+            "invoice_date": invoice.generated_at.strftime("%d %b %Y") if invoice.generated_at else "",
+            "order_number": order.order_number,
+            "payment_method": order.payment_method,
+            "payment_txn_id": order.payment_gateway_txn_id,
+            # Seller
+            "seller_name": invoice.seller_name,
+            "seller_gstin": invoice.seller_gstin,
+            "seller_address": invoice.seller_address,
+            "seller_state": invoice.seller_state,
+            "seller_state_code": invoice.seller_state_code,
+            # Buyer
+            "buyer_name": invoice.buyer_name,
+            "buyer_gstin": invoice.buyer_gstin,
+            "buyer_address": invoice.buyer_address,
+            "buyer_state": invoice.buyer_state,
+            "buyer_state_code": invoice.buyer_state_code,
+            # Supply
+            "place_of_supply": invoice.place_of_supply,
+            "supply_type": invoice.supply_type,
+            # Amounts
+            "subtotal": invoice.subtotal,
+            "cgst_amount": invoice.cgst_amount,
+            "sgst_amount": invoice.sgst_amount,
+            "igst_amount": invoice.igst_amount,
+            "shipping_fee": invoice.shipping_fee,
+            "discount_amount": invoice.discount_amount,
+            "coupon_code": order.coupon_code_snapshot,
+            "grand_total": invoice.grand_total,
+            "currency": invoice.currency,
+            "amount_in_words": amount_in_words(invoice.grand_total, invoice.currency),
+            # Line items
+            "line_items": [
+                {
+                    "description": li.description,
+                    "hsn_code": li.hsn_code,
+                    "quantity": li.quantity,
+                    "unit_price": li.unit_price,
+                    "taxable_amount": li.taxable_amount,
+                    "cgst_rate": li.cgst_rate,
+                    "cgst_amount": li.cgst_amount,
+                    "sgst_rate": li.sgst_rate,
+                    "sgst_amount": li.sgst_amount,
+                    "igst_rate": li.igst_rate,
+                    "igst_amount": li.igst_amount,
+                    "total_amount": li.total_amount,
+                }
+                for li in line_items
+            ],
+        }
+
+        # Render HTML
+        html = render_invoice_html(data)
+
+        # Generate PDF
+        pdf_bytes = html_to_pdf(html)
+
+        # Upload to S3
+        fy = get_current_financial_year()
+        s3_key = f"invoices/{fy}/{invoice.invoice_number}.pdf"
+        pdf_url = await upload_pdf_to_s3(pdf_bytes, s3_key)
+
+        return pdf_url
+
+    # ──────────────── Generate Credit Note ────────────────
+
+    async def generate_credit_note(
+        self,
+        invoice_id: UUID,
+        reason: str,
+        subtotal: Decimal,
+        cgst_amount: Decimal = Decimal("0"),
+        sgst_amount: Decimal = Decimal("0"),
+        igst_amount: Decimal = Decimal("0"),
+        return_id: UUID | None = None,
+        refund_id: UUID | None = None,
+    ) -> CreditNote:
+        """
+        Generate a credit note against an existing invoice (for refunds).
+        Called automatically when order reaches 'refunded' state.
+        """
+        # 1. Verify invoice exists
+        result = await self.db.execute(
+            select(Invoice).where(Invoice.id == invoice_id)
+        )
+        invoice = result.scalar_one_or_none()
+        if not invoice:
+            raise InvoiceServiceError(f"Invoice {invoice_id} not found", 404)
+
+        # 2. Get next credit note number
+        cn_number = await get_next_invoice_number(
+            self.db, document_type="credit_note"
+        )
+
+        total_amount = subtotal + cgst_amount + sgst_amount + igst_amount
+
+        # 3. Create credit note
+        credit_note = CreditNote(
+            invoice_id=invoice.id,
+            return_id=return_id,
+            refund_id=refund_id,
+            credit_note_number=cn_number,
+            reason=reason,
+            subtotal=subtotal,
+            cgst_amount=cgst_amount,
+            sgst_amount=sgst_amount,
+            igst_amount=igst_amount,
+            total_amount=total_amount,
+            issued_at=datetime.now(timezone.utc),
+        )
+        self.db.add(credit_note)
+        await self.db.flush()
+
+        # 4. Generate PDF
+        try:
+            pdf_url = await self._generate_credit_note_pdf(credit_note, invoice)
+            credit_note.pdf_url = pdf_url
+            await self.db.flush()
+        except Exception as e:
+            logger.error(f"Credit note PDF generation failed for {cn_number}: {e}")
+
+        logger.info(f"Credit note {cn_number} generated against invoice {invoice.invoice_number}")
+        return credit_note
+
+    async def _generate_credit_note_pdf(
+        self, cn: CreditNote, invoice: Invoice
+    ) -> str:
+        """Render credit note HTML → PDF → upload to S3."""
+        # Load order for order_number
+        result = await self.db.execute(
+            select(Order).where(Order.id == invoice.order_id)
+        )
+        order = result.scalar_one_or_none()
+
+        data = {
+            "credit_note_number": cn.credit_note_number,
+            "original_invoice_number": invoice.invoice_number,
+            "issued_date": cn.issued_at.strftime("%d %b %Y") if cn.issued_at else "",
+            "order_number": order.order_number if order else "N/A",
+            # Seller
+            "seller_name": invoice.seller_name,
+            "seller_gstin": invoice.seller_gstin,
+            "seller_address": invoice.seller_address,
+            # Buyer
+            "buyer_name": invoice.buyer_name,
+            "buyer_gstin": invoice.buyer_gstin,
+            "buyer_address": invoice.buyer_address,
+            # Reason
+            "reason": cn.reason,
+            # Amounts
+            "subtotal": cn.subtotal,
+            "cgst_amount": cn.cgst_amount,
+            "sgst_amount": cn.sgst_amount,
+            "igst_amount": cn.igst_amount,
+            "total_amount": cn.total_amount,
+            "currency": invoice.currency,
+            "amount_in_words": amount_in_words(cn.total_amount, invoice.currency),
+        }
+
+        html = render_credit_note_html(data)
+        pdf_bytes = html_to_pdf(html)
+
+        fy = get_current_financial_year()
+        s3_key = f"credit-notes/{fy}/{cn.credit_note_number}.pdf"
+        pdf_url = await upload_pdf_to_s3(pdf_bytes, s3_key)
+
+        return pdf_url
+
+    # ──────────────── Retrieve Invoice ────────────────
+
+    async def get_invoice_by_order(self, order_id: UUID) -> Invoice | None:
+        """Get invoice for a specific order."""
+        result = await self.db.execute(
+            select(Invoice)
+            .options(selectinload(Invoice.line_items))
+            .where(Invoice.order_id == order_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_invoice_by_id(self, invoice_id: UUID) -> Invoice | None:
+        """Get invoice by its ID with line items."""
+        result = await self.db.execute(
+            select(Invoice)
+            .options(selectinload(Invoice.line_items))
+            .where(Invoice.id == invoice_id)
+        )
+        return result.scalar_one_or_none()
+
+    # ──────────────── List Invoices (Admin) ────────────────
+
+    async def list_invoices(
+        self,
+        page: int = 1,
+        page_size: int = 20,
+        invoice_type: str | None = None,
+        supply_type: str | None = None,
+        from_date: datetime | None = None,
+        to_date: datetime | None = None,
+        search: str | None = None,
+    ) -> tuple[list[Invoice], int]:
+        """List invoices with filters (admin)."""
+        query = select(Invoice)
+        count_query = select(func.count(Invoice.id))
+
+        conditions = []
+        if invoice_type:
+            conditions.append(Invoice.invoice_type == invoice_type)
+        if supply_type:
+            conditions.append(Invoice.supply_type == supply_type)
+        if from_date:
+            conditions.append(Invoice.generated_at >= from_date)
+        if to_date:
+            conditions.append(Invoice.generated_at <= to_date)
+        if search:
+            conditions.append(
+                Invoice.invoice_number.ilike(f"%{search}%")
+                | Invoice.buyer_name.ilike(f"%{search}%")
+            )
+
+        if conditions:
+            query = query.where(and_(*conditions))
+            count_query = count_query.where(and_(*conditions))
+
+        # Count
+        total_result = await self.db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        # Paginate
+        offset = (page - 1) * page_size
+        query = query.order_by(Invoice.generated_at.desc()).offset(offset).limit(page_size)
+
+        result = await self.db.execute(query)
+        invoices = result.scalars().all()
+
+        return invoices, total
+
+    # ──────────────── List Credit Notes (Admin) ────────────────
+
+    async def list_credit_notes(
+        self,
+        page: int = 1,
+        page_size: int = 20,
+        from_date: datetime | None = None,
+        to_date: datetime | None = None,
+    ) -> tuple[list[CreditNote], int]:
+        """List credit notes with filters (admin)."""
+        query = select(CreditNote)
+        count_query = select(func.count(CreditNote.id))
+
+        conditions = []
+        if from_date:
+            conditions.append(CreditNote.issued_at >= from_date)
+        if to_date:
+            conditions.append(CreditNote.issued_at <= to_date)
+
+        if conditions:
+            query = query.where(and_(*conditions))
+            count_query = count_query.where(and_(*conditions))
+
+        total_result = await self.db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        offset = (page - 1) * page_size
+        query = query.order_by(CreditNote.issued_at.desc()).offset(offset).limit(page_size)
+
+        result = await self.db.execute(query)
+        credit_notes = result.scalars().all()
+
+        return credit_notes, total
+
+    # ──────────────── GST Summary Report ────────────────
+
+    async def generate_gst_summary(
+        self,
+        financial_year: str,
+        from_date: datetime | None = None,
+        to_date: datetime | None = None,
+    ) -> dict:
+        """
+        Generate HSN-wise GST summary report for a financial year.
+        Used by finance_manager for GST return filing.
+        """
+        # Parse FY date range if from/to not provided
+        if not from_date or not to_date:
+            fy_parts = financial_year.split("-")
+            start_year = int(fy_parts[0])
+            from_date = from_date or datetime(start_year, 4, 1, tzinfo=timezone.utc)
+            to_date = to_date or datetime(start_year + 1, 3, 31, 23, 59, 59, tzinfo=timezone.utc)
+
+        # HSN-wise summary from invoice line items
+        hsn_query = text("""
+            SELECT
+                COALESCE(ili.hsn_code, 'N/A') as hsn_code,
+                ili.description,
+                SUM(ili.quantity) as total_quantity,
+                SUM(ili.taxable_amount) as total_taxable_amount,
+                SUM(ili.cgst_amount) as cgst_amount,
+                SUM(ili.sgst_amount) as sgst_amount,
+                SUM(ili.igst_amount) as igst_amount,
+                SUM(ili.cgst_amount + ili.sgst_amount + ili.igst_amount) as total_tax,
+                SUM(ili.total_amount) as total_amount
+            FROM invoice_line_items ili
+            JOIN invoices i ON ili.invoice_id = i.id
+            WHERE i.generated_at >= :from_date
+              AND i.generated_at <= :to_date
+              AND i.invoice_type = 'tax_invoice'
+            GROUP BY COALESCE(ili.hsn_code, 'N/A'), ili.description
+            ORDER BY total_taxable_amount DESC
+        """)
+
+        result = await self.db.execute(
+            hsn_query,
+            {"from_date": from_date, "to_date": to_date},
+        )
+        hsn_rows = result.fetchall()
+
+        hsn_items = []
+        total_taxable = Decimal("0")
+        total_cgst = Decimal("0")
+        total_sgst = Decimal("0")
+        total_igst = Decimal("0")
+        total_tax = Decimal("0")
+        total_value = Decimal("0")
+
+        for row in hsn_rows:
+            item = {
+                "hsn_code": row[0],
+                "description": row[1] or "",
+                "total_quantity": row[2] or 0,
+                "total_taxable_amount": Decimal(str(row[3] or 0)),
+                "cgst_amount": Decimal(str(row[4] or 0)),
+                "sgst_amount": Decimal(str(row[5] or 0)),
+                "igst_amount": Decimal(str(row[6] or 0)),
+                "total_tax": Decimal(str(row[7] or 0)),
+                "total_amount": Decimal(str(row[8] or 0)),
+            }
+            hsn_items.append(item)
+            total_taxable += item["total_taxable_amount"]
+            total_cgst += item["cgst_amount"]
+            total_sgst += item["sgst_amount"]
+            total_igst += item["igst_amount"]
+            total_tax += item["total_tax"]
+            total_value += item["total_amount"]
+
+        # Count invoices and credit notes in period
+        inv_count = await self.db.execute(
+            text("""
+                SELECT COUNT(*) FROM invoices
+                WHERE generated_at >= :from_date AND generated_at <= :to_date
+                AND invoice_type = 'tax_invoice'
+            """),
+            {"from_date": from_date, "to_date": to_date},
+        )
+        invoice_count = inv_count.scalar() or 0
+
+        cn_count = await self.db.execute(
+            text("""
+                SELECT COUNT(*) FROM credit_notes
+                WHERE issued_at >= :from_date AND issued_at <= :to_date
+            """),
+            {"from_date": from_date, "to_date": to_date},
+        )
+        credit_note_count = cn_count.scalar() or 0
+
+        return {
+            "financial_year": financial_year,
+            "from_date": from_date,
+            "to_date": to_date,
+            "hsn_items": hsn_items,
+            "total_taxable": total_taxable,
+            "total_cgst": total_cgst,
+            "total_sgst": total_sgst,
+            "total_igst": total_igst,
+            "total_tax": total_tax,
+            "total_invoice_value": total_value,
+            "invoice_count": invoice_count,
+            "credit_note_count": credit_note_count,
+        }
+
+    # ──────────────── Regenerate PDF ────────────────
+
+    async def regenerate_invoice_pdf(self, invoice_id: UUID) -> str:
+        """Regenerate a failed or missing invoice PDF."""
+        result = await self.db.execute(
+            select(Invoice).where(Invoice.id == invoice_id)
+        )
+        invoice = result.scalar_one_or_none()
+        if not invoice:
+            raise InvoiceServiceError("Invoice not found", 404)
+
+        result = await self.db.execute(
+            select(Order).where(Order.id == invoice.order_id)
+        )
+        order = result.scalar_one_or_none()
+        if not order:
+            raise InvoiceServiceError("Order not found", 404)
+
+        pdf_url = await self._generate_invoice_pdf(invoice, order)
+        invoice.pdf_url = pdf_url
+        await self.db.flush()
+
+        return pdf_url

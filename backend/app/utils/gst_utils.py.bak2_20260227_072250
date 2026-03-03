@@ -1,0 +1,134 @@
+"""
+GST Tax Utility — Supply type determination and tax component splitting.
+Phase 9 — V2.5 Blueprint
+
+Indian GST State Codes: https://gstcouncil.gov.in/
+"""
+
+from decimal import Decimal
+
+# Indian state codes (2-digit) used for GST place of supply
+INDIAN_STATE_CODES: dict[str, str] = {
+    "Jammu and Kashmir": "01",
+    "Himachal Pradesh": "02",
+    "Punjab": "03",
+    "Chandigarh": "04",
+    "Uttarakhand": "05",
+    "Haryana": "06",
+    "Delhi": "07",
+    "Rajasthan": "08",
+    "Uttar Pradesh": "09",
+    "Bihar": "10",
+    "Sikkim": "11",
+    "Arunachal Pradesh": "12",
+    "Nagaland": "13",
+    "Manipur": "14",
+    "Mizoram": "15",
+    "Tripura": "16",
+    "Meghalaya": "17",
+    "Assam": "18",
+    "West Bengal": "19",
+    "Jharkhand": "20",
+    "Odisha": "21",
+    "Chhattisgarh": "22",
+    "Madhya Pradesh": "23",
+    "Gujarat": "24",
+    "Dadra and Nagar Haveli and Daman and Diu": "26",
+    "Maharashtra": "27",
+    "Andhra Pradesh": "28",  # Old: 28, Telangana split
+    "Karnataka": "29",
+    "Goa": "30",
+    "Lakshadweep": "31",
+    "Kerala": "32",
+    "Tamil Nadu": "33",
+    "Puducherry": "34",
+    "Andaman and Nicobar Islands": "35",
+    "Telangana": "36",
+    "Andhra Pradesh (New)": "37",
+    "Ladakh": "38",
+}
+
+
+def get_state_code(state_name: str) -> str | None:
+    """Look up GST state code by state name."""
+    # Direct match
+    code = INDIAN_STATE_CODES.get(state_name)
+    if code:
+        return code
+    # Case-insensitive search
+    for name, code in INDIAN_STATE_CODES.items():
+        if name.lower() == state_name.lower():
+            return code
+    return None
+
+
+def determine_supply_type(
+    seller_state: str | None,
+    buyer_state: str | None,
+    buyer_country: str | None,
+) -> str:
+    """
+    Determine GST supply type:
+      - 'intra_state':  Same state → CGST + SGST
+      - 'inter_state':  Different states in India → IGST
+      - 'export':       Outside India → Zero-rated / IGST with LUT
+    """
+    if buyer_country and buyer_country.lower() not in ("india", "in"):
+        return "export"
+
+    if seller_state and buyer_state:
+        seller_code = get_state_code(seller_state) or seller_state
+        buyer_code = get_state_code(buyer_state) or buyer_state
+        if seller_code == buyer_code:
+            return "intra_state"
+        else:
+            return "inter_state"
+
+    # Default to inter-state if states unknown
+    return "inter_state"
+
+
+def split_tax_components(
+    taxable_amount: Decimal,
+    gst_rate: Decimal,
+    supply_type: str,
+) -> dict:
+    """
+    Split total GST into CGST/SGST or IGST based on supply type.
+
+    Returns dict with cgst_rate, cgst_amount, sgst_rate, sgst_amount,
+    igst_rate, igst_amount.
+    """
+    total_tax = (taxable_amount * gst_rate / Decimal("100")).quantize(Decimal("0.01"))
+
+    if supply_type == "intra_state":
+        half_rate = (gst_rate / Decimal("2")).quantize(Decimal("0.01"))
+        half_tax = (total_tax / Decimal("2")).quantize(Decimal("0.01"))
+        # Handle odd penny: add remainder to CGST
+        remainder = total_tax - (half_tax * 2)
+        return {
+            "cgst_rate": half_rate,
+            "cgst_amount": half_tax + remainder,
+            "sgst_rate": half_rate,
+            "sgst_amount": half_tax,
+            "igst_rate": Decimal("0"),
+            "igst_amount": Decimal("0"),
+        }
+    elif supply_type == "inter_state":
+        return {
+            "cgst_rate": Decimal("0"),
+            "cgst_amount": Decimal("0"),
+            "sgst_rate": Decimal("0"),
+            "sgst_amount": Decimal("0"),
+            "igst_rate": gst_rate,
+            "igst_amount": total_tax,
+        }
+    else:  # export — zero-rated
+        return {
+            "cgst_rate": Decimal("0"),
+            "cgst_amount": Decimal("0"),
+            "sgst_rate": Decimal("0"),
+            "sgst_amount": Decimal("0"),
+            "igst_rate": Decimal("0"),
+            "igst_amount": Decimal("0"),
+        }

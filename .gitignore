@@ -1,0 +1,57 @@
+# ===========================
+# Ashmiwebportal .gitignore
+# ===========================
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+*.egg-info/
+
+# Environment
+.env
+.env.*
+!.env.example
+backend/.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node
+node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+
+# Logs
+*.log
+
+# Docker
+docker-compose.override.yml
+
+# Temp / uploads
+upload_temp/
+tmp/
+temp/
+*.bak
+*.tmp
+
+
+# Tests / build
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+playwright-report/
+test-results/
+dist/
+build/
+
+# Security
+*.pem
+*.key
+

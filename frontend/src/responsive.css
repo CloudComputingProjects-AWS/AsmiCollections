@@ -1,0 +1,263 @@
+/* ============================================
+ * Phase 13F — File 10/12: Global Responsive & Accessibility CSS
+ * Add to index.css AFTER Tailwind directives:
+ *   @import 'tailwindcss';
+ *   @import './responsive.css';
+ * OR paste contents at the end of index.css
+ * ============================================ */
+
+/* ---- Toast slide-in animation ---- */
+@keyframes toastSlide {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* ---- Focus-visible ring for keyboard navigation ---- */
+*:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Remove focus ring for mouse clicks (but keep for keyboard) */
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ---- Mobile-first responsive fixes ---- */
+
+/* Prevent horizontal scroll from overflowing content */
+html, body {
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Ensure images never overflow containers */
+img, video, svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Better touch targets on mobile (min 44x44 per WCAG) */
+@media (max-width: 767px) {
+  button, a, input, select, textarea {
+    min-height: 44px;
+  }
+
+  /* Stack admin sidebar on mobile */
+  .admin-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 40;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+  }
+  .admin-sidebar.open {
+    transform: translateX(0);
+  }
+  .admin-sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 39;
+  }
+
+  /* Full-width cards on mobile */
+  .product-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 0.75rem;
+  }
+
+  /* Compact table on mobile — horizontal scroll */
+  .admin-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Stack checkout sections */
+  .checkout-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Mobile-friendly modal */
+  .modal-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    border-radius: 1rem 1rem 0 0 !important;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+}
+
+/* Tablet adjustments */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .product-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+/* ---- High contrast mode support ---- */
+@media (prefers-contrast: high) {
+  * {
+    border-color: currentColor !important;
+  }
+  button, a {
+    text-decoration: underline;
+  }
+}
+
+/* ---- Reduced motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---- Print styles ---- */
+@media print {
+  /* Hide nav, sidebar, footer, buttons */
+  nav, header, footer, .admin-sidebar,
+  button:not(.print-btn), .no-print {
+    display: none !important;
+  }
+
+  /* Invoice print optimization */
+  .invoice-container {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  body {
+    font-size: 12pt;
+    color: #000;
+    background: #fff;
+  }
+
+  a[href]::after {
+    content: " (" attr(href) ")";
+    font-size: 0.8em;
+    color: #666;
+  }
+}
+
+/* ---- Color contrast helpers ---- */
+.text-contrast-safe {
+  color: #1a1a1a;  /* 12.6:1 on white — AAA */
+}
+.bg-contrast-safe {
+  background-color: #f8f9fa;
+}
+/* ============================================================
+   TOUCH TARGET FIX — Phase 13F Checklist Item 1
+   Ensures all interactive elements meet ≥44px touch target
+   on mobile viewports (≤768px).
+   
+   Append this to the END of src/responsive.css
+   ============================================================ */
+
+@media (max-width: 768px) {
+  /* ---- Header icon links (wishlist, save/bookmark, user) ----
+     These have class p-2 (8px padding) + 20px icon = 36px.
+     Bump to min 44×44 with centered content. */
+  header a[class*="p-2"],
+  header button[class*="p-2"] {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ---- Hamburger menu button ----
+     Was 38×44, needs 44px width minimum */
+  header button[class*="lg:hidden"] {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ---- User name / profile button in header ----
+     Was 36×44 */
+  header button[class*="text-neutral"] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* ---- Footer links ----
+     All were Nx19px height. Need min-height 44px for tappability.
+     Using display:inline-flex to maintain layout while adding height. */
+  footer a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* ---- Cookie banner dismiss button (×) ----
+     Was 16×44, far too narrow */
+  [class*="cookie"] button,
+  button[class*="text-gray-400"][class*="hover:text-gray-600"] {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ---- Manage Preferences link/button in cookie banner ---- */
+  [class*="cookie"] a,
+  [class*="cookie"] button[class*="text-"] {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* ---- Generic safety net ----
+     Catch any remaining interactive elements that slip through.
+     This is the rule responsive.css likely already has, 
+     but scoped more broadly. */
+  a:not([class*="skip"]),
+  button,
+  input,
+  select,
+  textarea,
+  [role="button"],
+  [tabindex="0"] {
+    min-height: 44px;
+  }
+
+  /* Ensure inline icon-only buttons (no text) get width too */
+  button:has(> svg:only-child),
+  a:has(> svg:only-child) {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* Fix short-text footer links (Men, Boys, Girls, FAQ etc.) � width < 44px */
+@media (max-width: 768px) {
+  footer a {
+    min-width: 44px;
+    text-align: center;
+    justify-content: center;
+  }
+}
