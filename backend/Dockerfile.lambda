@@ -1,0 +1,18 @@
+# Ashmiwebportal — Lambda Container Image
+# Base: AWS public ECR Python 3.11 Lambda runtime
+# Region: ap-south-1 (Mumbai)
+# Handler: lambda_handler.handler
+
+FROM public.ecr.aws/lambda/python:3.11
+
+# Copy requirements and install dependencies
+# --no-cache-dir keeps image size minimal
+COPY requirements.txt ${LAMBDA_TASK_ROOT}/
+RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
+
+# Copy application source
+COPY app/ ${LAMBDA_TASK_ROOT}/app/
+COPY lambda_handler.py ${LAMBDA_TASK_ROOT}/
+
+# Lambda handler path: module.function
+CMD ["lambda_handler.handler"]

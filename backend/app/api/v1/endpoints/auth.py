@@ -3,11 +3,16 @@ Auth API endpoints -- /api/v1/auth/
 Includes: register, login (with 2FA support), refresh, logout, me,
           email verification (OTP), forgot password, reset password.
 
-SECURITY (Updated 01-Mar-2026 S16):
-  - access_token: httpOnly cookie, path="/", SameSite=Strict
-  - refresh_token: httpOnly cookie, path="/api/v1/auth", SameSite=Strict
+SECURITY (Updated 05-Mar-2026 S20):
+  - access_token: httpOnly cookie, path="/", SameSite=environment-aware
+  - refresh_token: httpOnly cookie, path="/api/v1/auth", SameSite=environment-aware
   - NEITHER token is returned in JSON response body
   - refresh_token cookie path is restricted so it is only sent on auth endpoints
+
+SameSite policy by ENVIRONMENT value:
+  development  — SameSite=Strict,  Secure=False  (local machine, same-origin HTTP)
+  aws_dev      — SameSite=None,    Secure=True   (cross-origin: S3 + API Gateway)
+  production   — SameSite=Strict,  Secure=True   (same-origin via CloudFront)
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -41,7 +46,40 @@ from app.utils.email_sender import send_otp_email, send_password_reset_email, se
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 settings = get_settings()
 
+
 # --------------- Cookie Helper ---------------
+
+def _get_cookie_security_params() -> tuple[str, bool]:
+    """
+    Return (samesite, secure) tuple based on ENVIRONMENT setting.
+
+    development  -> ("strict", False)
+      Local machine. Frontend (localhost:3000) and backend (localhost:8000)
+      are same-origin context. HTTP is fine. SameSite=Strict is most secure.
+
+    aws_dev      -> ("none", True)
+      S3 frontend (*.s3-website.amazonaws.com) and API Gateway
+      (*.execute-api.amazonaws.com) are different domains. Browsers silently
+      drop SameSite=Strict cookies on cross-origin requests — every
+      authenticated API call returns 401. SameSite=None; Secure=True is
+      required. API Gateway always provides HTTPS so Secure=True is safe.
+
+    production   -> ("strict", True)
+      CloudFront dual-origin serves both frontend and API on the same domain.
+      Cross-origin issue does not exist. SameSite=Strict is restored.
+      HTTPS enforced by CloudFront.
+
+    Any unrecognised value defaults to strictest setting (strict + True).
+    """
+    env = settings.ENVIRONMENT.lower()
+    if env == "development":
+        return "strict", False
+    elif env == "aws_dev":
+        return "none", True
+    else:
+        # production or any unrecognised value
+        return "strict", True
+
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
     """Set both access_token and refresh_token as httpOnly cookies.
@@ -49,14 +87,14 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
     - access_token: path="/" (sent on all API calls)
     - refresh_token: path="/api/v1/auth" (sent only on auth endpoints — refresh, logout)
     """
-    is_prod = settings.ENVIRONMENT != "development"
+    samesite, secure = _get_cookie_security_params()
 
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=is_prod,
-        samesite="strict",
+        secure=secure,
+        samesite=samesite,
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
     )
@@ -64,8 +102,8 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=is_prod,
-        samesite="strict",
+        secure=secure,
+        samesite=samesite,
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         path="/api/v1/auth",
     )
@@ -219,7 +257,7 @@ async def get_me(user: User = Depends(get_current_user)):
     return user
 
 
-# ──────────────── Email Verification (OTP) ────────────────
+# ─────────────────── Email Verification (OTP) ───────────────────
 
 
 @router.post("/verify-email", response_model=MessageResponse)
@@ -245,7 +283,6 @@ async def verify_email_token(
     """Legacy: Verify email address using token link (backward compatibility)."""
     service = EmailVerificationService(db)
     try:
-        # For legacy token-based verification, look up by token hash directly
         from app.core.security import hash_token
         from app.models.models import EmailVerification
         from sqlalchemy import select
@@ -311,7 +348,7 @@ async def resend_verification(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-# ──────────────── Forgot / Reset Password ────────────────
+# ─────────────────── Forgot / Reset Password ───────────────────
 
 
 @router.post("/forgot-password", response_model=MessageResponse)
