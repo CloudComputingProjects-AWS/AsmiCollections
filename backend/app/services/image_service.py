@@ -9,6 +9,7 @@ Architecture:
   → Lambda POSTs callback → this service updates URLs + status
 """
 
+import os
 import uuid
 from datetime import datetime, timezone
 
@@ -90,17 +91,11 @@ class ImageService:
         # Generate pre-signed URL using boto3
         try:
             import boto3
-            s3_client = boto3.client(
-                "s3",
-                region_name=settings.AWS_REGION,
-                aws_access_key_id=settings.AWS_ACCESS_KEY_ID or None,
-                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY or None,
-            )
-
+            s3_client = boto3.client("s3")
             presigned_url = s3_client.generate_presigned_url(
                 "put_object",
                 Params={
-                    "Bucket": settings.S3_BUCKET_NAME,
+                    "Bucket": os.environ["S3_BUCKET_NAME"],
                     "Key": s3_key,
                     "ContentType": content_type,
                 },
@@ -109,7 +104,7 @@ class ImageService:
         except Exception as e:
             # In development without AWS credentials, return a mock URL
             if settings.ENVIRONMENT == "development":
-                presigned_url = f"https://{settings.S3_BUCKET_NAME}.s3.{settings.AWS_REGION}.amazonaws.com/{s3_key}?mock=true"
+                presigned_url = f"https://mock-s3-bucket.s3.amazonaws.com/{s3_key}?mock=true"
             else:
                 raise ImageServiceError(f"Failed to generate upload URL: {str(e)}", 500)
 
@@ -119,7 +114,7 @@ class ImageService:
         # Create pending image record
         image = ProductImage(
             product_id=product_id,
-            original_url=f"s3://{settings.S3_BUCKET_NAME}/{s3_key}",
+            original_url=f"s3://{os.environ['S3_BUCKET_NAME']}/{s3_key}",
             alt_text=filename,
             is_primary=is_primary,
             sort_order=current_count,

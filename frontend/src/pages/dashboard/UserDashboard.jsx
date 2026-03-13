@@ -22,7 +22,7 @@ export default function UserDashboard() {
   const { orders, fetchOrders } = useOrderStore();
 
   useEffect(() => {
-    if (!user) { navigate('/login?redirect=/dashboard'); return; }
+    if (!user) { navigate('/login?next=/dashboard'); return; }
     fetchOrders(1);
   }, [user]);
 

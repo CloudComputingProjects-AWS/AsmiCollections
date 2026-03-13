@@ -623,7 +623,6 @@ class PaymentService:
         except Exception as inv_err:
             logger.error("Invoice generation failed for order %s: %s", order_id, str(inv_err))
             # Non-fatal: order is already confirmed and paid
-            await self.db.rollback()
             # Admin can regenerate via POST /api/v1/admin/invoices/{order_id}/regenerate
 
     # ════════════════════════════════════════════════
@@ -761,3 +760,4 @@ class PaymentService:
             "currency": order.currency or "INR",
             "paid_at": None,
         }
+

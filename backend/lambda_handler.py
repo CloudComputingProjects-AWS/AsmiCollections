@@ -1,18 +1,22 @@
 """
 AWS Lambda entry point for the Ashmiwebportal FastAPI application.
 
+PERFORMANCE OPTIMIZATION:
+  Module-level imports are kept minimal (stdlib + mangum only).
+  The full FastAPI app (app.main) is imported LAZILY on first invocation.
+  This moves ~3.5s of import time from the init phase (10s hard limit)
+  into the first request's execution phase (30s timeout).
+
+  Init phase:  stdlib + mangum + config = ~1.5s (safe at 512MB)
+  First request: app.main import + Mangum wrap + handle = ~6s (within 30s)
+  Subsequent requests: ~50ms (app already loaded, reused across invocations)
+
 Two invocation modes:
   1. HTTP requests (via API Gateway HTTP API)
-     → Mangum wraps the full FastAPI ASGI app.
-     → All 147 routes, all middleware (CORS, auth, RBAC, PII, audit) execute identically.
-
+     -> Mangum wraps the full FastAPI ASGI app.
   2. Scheduled events (via AWS EventBridge)
-     → Payload contains {"task": "<task_name>"}
-     → Routes to the appropriate background job function.
-     → Three scheduled tasks:
-         release_reservations  — every 60s  (stock reservation expiry)
-         fx_rate_sync          — daily       (FX rate refresh)
-         process_deletions     — daily       (DPDP account deletion processor)
+     -> Payload contains {"task": "<task_name>"}
+     -> Routes to the appropriate background job function.
 
 Handler path for Lambda configuration: lambda_handler.handler
 """
@@ -22,11 +26,25 @@ import json
 
 from mangum import Mangum
 
-from app.main import app
+# Lazy-loaded references — populated on first invocation
+_mangum_handler = None
+_app = None
 
-# HTTP API Gateway handler — wraps entire FastAPI app
-# lifespan="off" required: Lambda manages lifecycle, not ASGI
-_mangum_handler = Mangum(app, lifespan="off")
+
+def _ensure_app():
+    """
+    Import app.main and create Mangum handler on first call.
+    This runs ONCE per Lambda container, during the first request.
+    Subsequent invocations reuse the cached references.
+    """
+    global _mangum_handler, _app
+
+    if _mangum_handler is not None:
+        return
+
+    from app.main import app
+    _app = app
+    _mangum_handler = Mangum(app, lifespan="off")
 
 
 def handler(event: dict, context) -> dict:
@@ -35,12 +53,28 @@ def handler(event: dict, context) -> dict:
     Detects EventBridge scheduled events by presence of 'task' key.
     All other events are forwarded to Mangum (HTTP requests).
     """
-    # EventBridge scheduled task detection
+    import logging
+    import traceback
+
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # EventBridge scheduled task detection -- does NOT need full app
     if "task" in event:
         return _run_background_task(event["task"])
 
-    # HTTP request via API Gateway — delegate to Mangum
-    return _mangum_handler(event, context)
+    # HTTP request -- ensure app is loaded, then delegate to Mangum
+    try:
+        _ensure_app()
+        return _mangum_handler(event, context)
+    except Exception as e:
+        logger.error("Handler exception: %s", str(e))
+        logger.error("Full traceback:\n%s", traceback.format_exc())
+        return {
+            "statusCode": 500,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": "Internal server error", "detail": str(e)})
+        }
 
 
 def _run_background_task(task_name: str) -> dict:
@@ -62,7 +96,7 @@ def _run_background_task(task_name: str) -> dict:
     if not task_fn:
         return {
             "statusCode": 400,
-            "body": json.dumps({"error": f"Unknown task: {task_name}"}),
+            "body": json.dumps({"error": "Unknown task: " + task_name}),
         }
 
     try:
@@ -80,31 +114,27 @@ def _run_background_task(task_name: str) -> dict:
 
 # --------------- Background Task Functions ---------------
 
-async def _task_release_reservations() -> None:
+async def _task_release_reservations():
     """Release expired stock reservations. EventBridge: every 60 seconds."""
-    from app.core.database import async_session_factory
     from app.jobs.reservation_expiry import release_expired_reservations
 
-    async with async_session_factory() as session:
-        await release_expired_reservations(session)
-        await session.commit()
+    await release_expired_reservations()
 
 
-async def _task_fx_rate_sync() -> None:
+
+
+
+async def _task_fx_rate_sync():
     """Sync FX rates from external provider. EventBridge: daily."""
-    from app.core.database import async_session_factory
     from app.jobs.fx_rate_sync import sync_fx_rates
 
-    async with async_session_factory() as session:
-        await sync_fx_rates(session)
-        await session.commit()
+    await sync_fx_rates()
 
 
-async def _task_process_deletions() -> None:
-    """Process pending account deletions after 30-day grace period. EventBridge: daily."""
-    from app.core.database import async_session_factory
-    from app.jobs.account_deletion import process_pending_deletions
 
-    async with async_session_factory() as session:
-        await process_pending_deletions(session)
-        await session.commit()
+
+
+async def _task_process_deletions():
+    """Process pending account deletions after 30-day grace period."""
+    from app.jobs.deletion_job import run_deletion_processor
+    await run_deletion_processor()

@@ -40,11 +40,9 @@ class Settings(BaseSettings):
     BCRYPT_ROUNDS: int = 12
 
     # ────────────────── AWS ──────────────────
-    AWS_REGION: str = "ap-south-1"
-    AWS_ACCESS_KEY_ID: str = ""
-    AWS_SECRET_ACCESS_KEY: str = ""
-    S3_BUCKET_NAME: str = "apparel-portal-assets"
-    CLOUDFRONT_DOMAIN: str = ""
+    # AWS_REGION: auto-injected by Lambda runtime
+    # S3_BUCKET_NAME: defined in Lambda env vars
+    # CLOUDFRONT_DOMAIN: read via os.getenv() in pdf_generator.py
 
     # ────────────────── Payment Gateways ──────────────────
     RAZORPAY_KEY_ID: str = ""

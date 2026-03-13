@@ -1,0 +1,9 @@
+﻿{
+  "Version": "2012-10-17",
+  "Statement": [
+    {"Sid":"ECRAuth","Effect":"Allow","Action":"ecr:GetAuthorizationToken","Resource":"*"},
+    {"Sid":"ECRPush","Effect":"Allow","Action":["ecr:BatchCheckLayerAvailability","ecr:GetDownloadUrlForLayer","ecr:BatchGetImage","ecr:PutImage","ecr:InitiateLayerUpload","ecr:UploadLayerPart","ecr:CompleteLayerUpload"],"Resource":"arn:aws:ecr:ap-south-1:762813627344:repository/ashmi-backend"},
+    {"Sid":"LambdaDeploy","Effect":"Allow","Action":["lambda:UpdateFunctionCode","lambda:GetFunction","lambda:GetFunctionConfiguration"],"Resource":"arn:aws:lambda:ap-south-1:762813627344:function:ashmi-backend-dev"},
+    {"Sid":"S3Deploy","Effect":"Allow","Action":["s3:PutObject","s3:DeleteObject","s3:ListBucket","s3:GetBucketLocation"],"Resource":["arn:aws:s3:::ashmi-dev-frontend","arn:aws:s3:::ashmi-dev-frontend/*"]}
+  ]
+}

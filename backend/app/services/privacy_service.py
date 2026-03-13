@@ -329,9 +329,7 @@ class PrivacyService:
             delete(UserAddress).where(UserAddress.user_id == user_id)
         )
 
-        # Wishlist
-        await self.db.execute(
-        )
+        # Wishlist — model not yet implemented (Phase 13G+)
 
         # Cart + cart items (cascade)
         cart_result = await self.db.execute(
@@ -452,17 +450,8 @@ class PrivacyService:
             }
             for o in order_result.scalars().all()
         ]
-
-        # Wishlist
-        wish_result = await self.db.execute(
-        )
-        wishlist = [
-            {
-                "product_id": str(w.product_id),
-                "added_at": w.added_at.isoformat() if w.added_at else None,
-            }
-            for w in wish_result.scalars().all()
-        ]
+        # Wishlist -- model not yet implemented (Phase 13G+)
+        wishlist = []
 
         # Reviews
         review_result = await self.db.execute(
@@ -546,3 +535,4 @@ class PrivacyService:
         await self.db.flush()
         logger.info("Stored %d cookie consents for user %s", stored, user_id)
         return stored
+

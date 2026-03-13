@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { authApi } from '@/api';
+import apiClient from '@/api/apiClient';
 import Button from '@/components/common/Button';
 import Input from '@/components/common/Input';
 
@@ -16,7 +16,7 @@ export default function ForgotPasswordPage() {
     if (!email) return;
     setLoading(true);
     try {
-      await authApi.forgotPassword(email);
+      await apiClient.post('/auth/forgot-password', { email });
       setSent(true);
       toast.success('Reset link sent — check your email');
     } catch (err) {

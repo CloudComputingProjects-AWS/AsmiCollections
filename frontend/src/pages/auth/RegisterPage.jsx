@@ -81,7 +81,7 @@ export default function RegisterPage() {
         navigate('/verify-otp', { state: { email: form.email } });
       }, 1500);
     } catch (err) {
-      setErrorMsg(err.response?.data?.detail);
+      setErrorMsg(typeof err.response?.data?.detail === 'string' ? err.response.data.detail : 'Registration failed. Please check your details.');
     } finally {
       setLoading(false);
     }

@@ -1,18 +1,18 @@
-"""
-Payment API Endpoints — Phase 8.
+﻿"""
+Payment API Endpoints â€” Phase 8.
 
 Routes:
-  POST /api/v1/payments/methods          — Get available methods by country
-  POST /api/v1/payments/razorpay/create  — Create Razorpay order
-  POST /api/v1/payments/razorpay/verify  — Client-side signature verify
-  POST /api/v1/payments/stripe/create    — Create Stripe PaymentIntent
-  GET  /api/v1/payments/:order_id/status — Check payment status
-  POST /api/v1/payments/fx-rate          — Lock FX rate for checkout
+  POST /api/v1/payments/methods          â€” Get available methods by country
+  POST /api/v1/payments/razorpay/create  â€” Create Razorpay order
+  POST /api/v1/payments/razorpay/verify  â€” Client-side signature verify
+  POST /api/v1/payments/stripe/create    â€” Create Stripe PaymentIntent
+  GET  /api/v1/payments/:order_id/status â€” Check payment status
+  POST /api/v1/payments/fx-rate          â€” Lock FX rate for checkout
 
-  POST /api/v1/webhooks/razorpay         — Razorpay webhook (no auth)
-  POST /api/v1/webhooks/stripe           — Stripe webhook (no auth)
+  POST /api/v1/webhooks/razorpay         â€” Razorpay webhook (no auth)
+  POST /api/v1/webhooks/stripe           â€” Stripe webhook (no auth)
 
-  POST /api/v1/admin/payments/refund     — Admin initiate refund
+  POST /api/v1/admin/payments/refund     â€” Admin initiate refund
 """
 
 import json
@@ -52,9 +52,9 @@ from app.services.payment_service import PaymentService, PaymentServiceError
 
 logger = logging.getLogger(__name__)
 
-# ────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # ROUTER SETUP
-# ────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 router = APIRouter(prefix="/api/v1", tags=["payments"])
 webhook_router = APIRouter(prefix="/api/v1/webhooks", tags=["webhooks"])
@@ -63,18 +63,18 @@ admin_payment_router = APIRouter(
 )
 
 
-# ────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # DEPENDENCIES
-# ────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def get_payment_service(db: AsyncSession = Depends(get_db)) -> PaymentService:
     """Factory for PaymentService with DB session."""
     return PaymentService(db=db)
 
 
-# ════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # PUBLIC PAYMENT ENDPOINTS (Authenticated user)
-# ════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post(
     "/payments/methods",
@@ -106,6 +106,7 @@ async def create_razorpay_order(
             order_id=body.order_id,
             user_id=current_user.id,
         )
+        await svc.db.commit()
         return RazorpayCreateOrderResponse(**result)
     except PaymentServiceError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -129,6 +130,7 @@ async def verify_razorpay_payment(
             razorpay_signature=body.razorpay_signature,
             order_id=body.order_id,
         )
+        await svc.db.commit()
         return RazorpayVerifyResponse(**result)
     except PaymentServiceError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -150,6 +152,7 @@ async def create_stripe_intent(
             order_id=body.order_id,
             user_id=current_user.id,
         )
+        await svc.db.commit()
         return StripeCreateIntentResponse(**result)
     except PaymentServiceError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -185,7 +188,7 @@ async def lock_fx_rate(
     current_user=Depends(get_current_user),
     svc: PaymentService = Depends(get_payment_service),
 ):
-    """Lock an exchange rate for a checkout session (INR → target currency)."""
+    """Lock an exchange rate for a checkout session (INR â†’ target currency)."""
     try:
         rate_info = await svc.fx_service.lock_rate_for_checkout(
             base_currency="INR", target_currency=body.target_currency,
@@ -202,7 +205,7 @@ async def lock_fx_rate(
         raise HTTPException(status_code=500, detail=f"FX rate fetch failed: {str(e)}")
 
 
-# ════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 # ---- CHECKOUT CONFIG (Strategy 1 - KEY_ID via backend only) --------
 
@@ -229,7 +232,7 @@ async def get_checkout_config(
 
 
 # UPI PAYMENT ENDPOINTS (Phase 13G)
-# ════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.post(
     "/payments/upi/collect",
@@ -249,6 +252,7 @@ async def upi_collect(
             user_id=current_user.id,
             vpa=body.vpa,
         )
+        await svc.db.commit()
         return UpiCollectResponse(**result)
     except PaymentServiceError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -271,6 +275,7 @@ async def upi_qr(
             order_id=body.order_id,
             user_id=current_user.id,
         )
+        await svc.db.commit()
         return UpiQrResponse(**result)
     except PaymentServiceError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -298,9 +303,9 @@ async def upi_poll(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-# ════════════════════════════════════════════════════════
-# WEBHOOK ENDPOINTS (No auth — verified by signature)
-# ════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# WEBHOOK ENDPOINTS (No auth â€” verified by signature)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @webhook_router.post("/razorpay", summary="Razorpay webhook handler", status_code=200)
 async def razorpay_webhook(
@@ -322,6 +327,7 @@ async def razorpay_webhook(
     svc = PaymentService(db=db)
     try:
         result = await svc.process_razorpay_webhook(event_data)
+        await db.commit()
         return result
     except Exception as e:
         logger.error("Razorpay webhook error: %s", str(e))
@@ -349,15 +355,16 @@ async def stripe_webhook(
     svc = PaymentService(db=db)
     try:
         result = await svc.process_stripe_webhook(event)
+        await db.commit()
         return result
     except Exception as e:
         logger.error("Stripe webhook error: %s", str(e))
         return {"status": "error", "detail": "Processing failed, will retry"}
 
 
-# ════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # ADMIN PAYMENT ENDPOINTS
-# ════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @admin_payment_router.post(
     "/refund",
@@ -377,6 +384,8 @@ async def admin_initiate_refund(
             reason=body.reason,
             admin_id=current_user.id,
         )
+        await svc.db.commit()
         return RefundResponse(**result)
     except PaymentServiceError as e:
         raise HTTPException(status_code=400, detail=str(e))
+

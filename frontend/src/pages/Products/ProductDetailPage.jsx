@@ -7,12 +7,14 @@ import {
 import { useProductDetail } from '../../hooks/useCatalog';
 import useAuthStore from '../../stores/authStore';
 import Breadcrumb from '../../components/common/Breadcrumb';
-import apiClient from '../../api/apiClient';
+import useCartStore from '../../stores/cartStore';
+import DOMPurify from 'dompurify';
 
 export default function ProductDetailPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { addToCart } = useCartStore();
   const { product, loading } = useProductDetail(slug);
 
   const [selectedImageIdx, setSelectedImageIdx] = useState(0);
@@ -65,17 +67,10 @@ export default function ProductDetailPage() {
     }
     if (!selectedVariant) return;
     setAddingToCart(true);
-    try {
-      await apiClient.post('/cart/add', {
-        variant_id: selectedVariant.id,
-        quantity,
-      });
-      // TODO: update cart store / show toast
-    } catch {
-      // handle error
-    } finally {
-      setAddingToCart(false);
-    }
+    const ok = await addToCart(selectedVariant.id, quantity, true);
+    if (ok) toast.success('Added to cart!');
+    else toast.error('Failed to add to cart');
+    setAddingToCart(false);
   };
 
 
@@ -358,7 +353,7 @@ export default function ProductDetailPage() {
               <h3 className="text-base font-bold text-neutral-800 mb-3">Description</h3>
               <div
                 className="text-sm text-neutral-600 leading-relaxed prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ __html: product.description }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(product.description) }}
               />
             </div>
           )}

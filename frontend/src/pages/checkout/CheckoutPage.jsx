@@ -19,7 +19,7 @@ export default function CheckoutPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const { items, coupon, couponDiscount, getSubtotal, clearCart } = useCartStore();
-  const { addresses, fetchAddresses } = useAddressStore();
+  const { addresses, fetchAddresses, error: addressError, clearError: clearAddressError } = useAddressStore();
 
   const [selectedAddressId, setSelectedAddressId] = useState(null);
   const [showAddressModal, setShowAddressModal] = useState(false);
@@ -32,6 +32,13 @@ export default function CheckoutPage() {
   const [step, setStep] = useState(1); // 1=address, 2=review, 3=payment
   const [shippingConfig, setShippingConfig] = useState({ shipping_fee: 0, free_shipping_threshold: 0 });
 
+  useEffect(() => {
+    if (addressError) {
+      toast.error(addressError);
+      clearAddressError();
+    }
+  }, [addressError]);
+
   // Fetch shipping config from API (dynamic, not hardcoded)
   useEffect(() => {
     apiClient.get('/catalog/shipping-config')
@@ -41,17 +48,14 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (!user) {
-      navigate('/login?redirect=/checkout');
+      navigate('/login?next=/checkout');
       return;
     }
     if (items.length === 0) {
       navigate('/cart');
       return;
     }
-    fetchAddresses().catch((err) => {
-      console.error('Address fetch failed:', err);
-      toast.error('Failed to load saved addresses. Please try again.');
-    });
+    fetchAddresses();
   }, [user]);
 
   useEffect(() => {

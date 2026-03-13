@@ -49,8 +49,8 @@ app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="E-Commerce Apparel Portal API — India + Global",
-    docs_url="/docs" if settings.ENVIRONMENT != "production" else None,
-    redoc_url="/redoc" if settings.ENVIRONMENT != "production" else None,
+    docs_url="/docs" if settings.ENVIRONMENT == "development" else None,
+    redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
     lifespan=lifespan,
 )
 

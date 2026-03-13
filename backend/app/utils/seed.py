@@ -9,8 +9,7 @@ import asyncio
 
 from sqlalchemy import select, text
 from app.core.database import async_session_factory, engine, Base
-from app.models.models import RolePermission, InvoiceSequence, User
-from app.core.security import hash_password
+from app.models.models import RolePermission, InvoiceSequence
 
 
 # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ RBAC Permissions Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -95,29 +94,6 @@ async def seed_invoice_sequences(session):
     print(f"  [OK] Seeded invoice sequences for FY {fy}")
 
 
-async def seed_admin(session):
-    """Create default admin if no admin exists."""
-    existing = await session.execute(
-        select(User).where(User.role == "admin")
-    )
-    if existing.scalars().first():
-        print("  [SKIP] admin already exists")
-        return
-
-    admin = User(
-        email="admin@yourstore.com",
-        password_hash=hash_password("Admin@123456"),
-        first_name="Super",
-        last_name="Admin",
-        role="admin",
-        email_verified=True,
-        is_active=True,
-    )
-    session.add(admin)
-    print("  [OK] Created admin: admin@yourstore.com / Admin@123456")
-    print("  [!!] CHANGE THIS PASSWORD IMMEDIATELY IN PRODUCTION")
-
-
 async def run_seed():
     print("=" * 50)
     print("  Database Seed Script")
@@ -132,7 +108,6 @@ async def run_seed():
     async with async_session_factory() as session:
         await seed_permissions(session)
         await seed_invoice_sequences(session)
-        await seed_admin(session)
         await session.commit()
 
     print()

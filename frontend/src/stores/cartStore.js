@@ -48,7 +48,7 @@ const useCartStore = create(
               i.product_variant_id === variantId ? { ...i, quantity: i.quantity + quantity } : i
             );
           } else {
-            newItems = [...items, { product_variant_id: variantId, quantity }];
+            newItems = [...items, { variant_id: variantId, quantity }];
           }
           set({
             items: newItems,
@@ -60,7 +60,7 @@ const useCartStore = create(
         // Authenticated: server-side
         try {
           await apiClient.post('/cart/add', {
-            product_variant_id: variantId,
+            variant_id: variantId,
             quantity,
           });
           await get().fetchCart();

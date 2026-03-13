@@ -72,7 +72,7 @@ export default function CartPage() {
 
   const handleCheckout = () => {
     if (!isAuth) {
-      navigate('/login?redirect=/checkout');
+      navigate('/login?next=/checkout');
       return;
     }
     if (items.length === 0) {

@@ -180,13 +180,16 @@ async def update_shipping_config(
 ):
     """Update shipping fee and free-shipping threshold. Audit-logged."""
     service = StoreSettingsService(db)
-    result = await service.update_shipping_config(
-        shipping_fee=data.shipping_fee,
-        free_shipping_threshold=data.free_shipping_threshold,
-        admin_id=user.id,
-    )
-    await db.commit()
-    return ShippingConfigUpdateResponse(**result)
+    try:
+        result = await service.update_shipping_config(
+            shipping_fee=data.shipping_fee,
+            free_shipping_threshold=data.free_shipping_threshold,
+            admin_id=user.id,
+        )
+        await db.commit()
+        return ShippingConfigUpdateResponse(**result)
+    except SettingsServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
 
 # ---- Seller / Business Config ----
 
@@ -220,6 +223,9 @@ async def get_seller_config(db: AsyncSession = Depends(get_db), user: User = Dep
 @router.put("/seller", response_model=SellerConfigUpdateResponse, summary="Update seller/business configuration")
 async def update_seller_config(data: SellerConfigUpdateRequest, db: AsyncSession = Depends(get_db), user: User = Depends(admin_only)):
     service = StoreSettingsService(db)
-    result = await service.update_seller_config(data.model_dump(), admin_id=user.id)
-    await db.commit()
-    return SellerConfigUpdateResponse(**result)
+    try:
+        result = await service.update_seller_config(data.model_dump(), admin_id=user.id)
+        await db.commit()
+        return SellerConfigUpdateResponse(**result)
+    except SettingsServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)

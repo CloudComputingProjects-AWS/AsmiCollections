@@ -33,7 +33,7 @@ export default function ProductManager() {
     if (!duplicateTarget || !duplicateCategory) return;
     setDuplicating(true);
     try {
-      const res = await apiClient.post(`/api/v1/admin/products/${duplicateTarget.id}/duplicate`, {
+      const res = await apiClient.post(`/admin/products/${duplicateTarget.id}/duplicate`, {
         target_category_id: duplicateCategory,
         map_sizes: true,
       });

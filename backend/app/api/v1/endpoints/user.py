@@ -12,14 +12,13 @@ from app.core.database import get_db
 from app.middleware.auth import get_current_user
 from app.models.models import User, UserAddress
 from app.schemas.auth import (
-    AddressCreate,
-    AddressResponse,
     AddressUpdate,
     ChangePasswordRequest,
     MessageResponse,
     UserProfileUpdate,
     UserResponse,
 )
+from app.schemas.order import AddressCreate, AddressResponse
 from app.core.security import hash_password, verify_password
 
 router = APIRouter(prefix="/user", tags=["User Profile"])

@@ -97,18 +97,6 @@ class UserProfileUpdate(BaseModel):
     country_code: str | None = Field(None, max_length=5)
 
 
-class AddressCreate(BaseModel):
-    label: str = Field(..., pattern="^(home|office|other)$")
-    full_name: str = Field(..., max_length=200)
-    phone: str | None = Field(None, max_length=20)
-    address_line_1: str = Field(..., max_length=500)
-    address_line_2: str | None = Field(None, max_length=500)
-    city: str = Field(..., max_length=100)
-    state: str = Field(..., max_length=100)
-    postal_code: str = Field(..., max_length=20)
-    country: str = Field(..., max_length=100)
-    is_default: bool = False
-
 
 class AddressUpdate(BaseModel):
     label: str | None = Field(None, pattern="^(home|office|other)$")
@@ -121,20 +109,6 @@ class AddressUpdate(BaseModel):
     postal_code: str | None = Field(None, max_length=20)
     country: str | None = Field(None, max_length=100)
     is_default: bool | None = None
-
-
-class AddressResponse(BaseModel):
-    id: UUID
-    label: str
-    full_name: str | None
-    phone: str | None
-    address_line_1: str
-    address_line_2: str | None
-    city: str
-    state: str
-    postal_code: str
-    country: str
-    is_default: bool
 
     class Config:
         from_attributes = True

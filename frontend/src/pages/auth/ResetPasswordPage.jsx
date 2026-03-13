@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { authApi } from '@/api';
+import apiClient from '@/api/apiClient';
 import Button from '@/components/common/Button';
 import Input from '@/components/common/Input';
 
@@ -31,7 +31,7 @@ export default function ResetPasswordPage() {
     if (form.password !== form.confirm) return toast.error('Passwords do not match');
     setLoading(true);
     try {
-      await authApi.resetPassword({ token, new_password: form.password });
+      await apiClient.post('/auth/reset-password', { token, new_password: form.password });
       toast.success('Password reset successfully');
       navigate('/login');
     } catch (err) {

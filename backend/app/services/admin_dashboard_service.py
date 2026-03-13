@@ -291,8 +291,11 @@ class AdminDashboardService:
 
         if category_id:
             query = query.join(
+                ProductVariant,
+                ProductVariant.id == OrderItem.product_variant_id
+            ).join(
                 Product,
-                Product.id == OrderItem.product_variant_id  # through variant
+                Product.id == ProductVariant.product_id
             ).where(Product.category_id == category_id)
 
         query = query.group_by("period").order_by("period")

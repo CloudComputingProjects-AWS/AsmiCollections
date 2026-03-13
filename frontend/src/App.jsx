@@ -114,8 +114,7 @@ export default function App() {
 
             {/* Redirect old /admin/login to /login */}
             <Route path="/admin/login" element={<Navigate to="/login" replace />} />
-            <Route path="admin/login"  element={<Navigate to="/login" replace />} />
-
+            
             {/* -- Customer routes (with CustomerLayout) ----------- */}
             <Route element={<CustomerLayout />}>
               {/* Public */}

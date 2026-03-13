@@ -1,5 +1,5 @@
-﻿/**
- * OrderHistoryPage â€” Order listing with status badges, timeline, invoice download.
+/**
+ * OrderHistoryPage — Order listing with status badges, timeline, invoice download.
  */
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -33,7 +33,7 @@ export default function OrderHistoryPage() {
 
   useEffect(() => {
     if (!user) {
-      navigate('/login?redirect=/orders');
+      navigate('/login?next=/orders');
       return;
     }
     fetchOrders(1);

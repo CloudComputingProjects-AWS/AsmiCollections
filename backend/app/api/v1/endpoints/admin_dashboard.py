@@ -63,7 +63,7 @@ dashboard_router = APIRouter(
     prefix="/admin/dashboard",
     tags=["Admin Dashboard"],
 )
-admin_dep = require_role("admin", "product_manager", "order_manager", "finance_manager")
+admin_dep = require_role("admin")
 
 
 @dashboard_router.get("/stats", response_model=DashboardStats)
@@ -213,7 +213,7 @@ audit_router = APIRouter(
     prefix="/admin/audit-logs",
     tags=["Admin Audit Logs"],
 )
-admin_dep = require_role("admin")
+# admin_dep already defined above as require_role("admin")
 
 
 @audit_router.get("", response_model=AuditLogListResponse)

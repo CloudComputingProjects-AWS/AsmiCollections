@@ -11,14 +11,17 @@
  * - 401 on API calls -> attempt refresh (cookie-based) -> retry original request
  * - 429 (rate limit) -> propagate to caller (do NOT trigger logout)
  * - Auth routes (login/register/refresh/me) -> skip interceptor, bubble up naturally
+ *
+ * Updated Session 27: Added timeout (30000ms) + normalizeError() merged from client.js
  */
 
 import axios from 'axios';
 
 const apiClient = axios.create({
-  baseURL: '/api/v1',             // Goes through Vite proxy -> same origin -> cookies work
+  baseURL: import.meta.env.VITE_API_URL || '/api/v1',             // Goes through Vite proxy -> same origin -> cookies work
   withCredentials: true,           // Send httpOnly cookies with every request
   headers: { 'Content-Type': 'application/json' },
+  timeout: 30000,                  // 30s timeout — prevents hanging requests
 });
 
 // Request interceptor — no Authorization header needed (cookie is automatic)
@@ -41,6 +44,22 @@ const processQueue = (error) => {
 
 // Routes that should NOT trigger the 401 refresh/redirect logic
 const AUTH_ROUTES = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/me'];
+
+// — Error normalizer — standardizes error shape for all components
+function normalizeError(error) {
+  if (error.response) {
+    const data = error.response.data;
+    return {
+      status: error.response.status,
+      message: data?.detail || data?.message || 'Something went wrong',
+      errors: data?.errors || null,
+    };
+  }
+  if (error.request) {
+    return { status: 0, message: 'Network error — check your connection', errors: null };
+  }
+  return { status: 0, message: error.message, errors: null };
+}
 
 apiClient.interceptors.response.use(
   (response) => response,
@@ -92,7 +111,8 @@ apiClient.interceptors.response.use(
       }
     }
 
-    return Promise.reject(error);
+    // Normalize all other errors before rejecting
+    return Promise.reject(normalizeError(error));
   }
 );
 

@@ -621,7 +621,7 @@ async def upload_pdf_to_s3(
     If S3 is not configured, saves to local /tmp and returns local path.
     """
     if bucket is None:
-        bucket = os.getenv("AWS_S3_BUCKET", "")
+        bucket = os.getenv("S3_BUCKET_NAME", "")
 
     if not bucket:
         # Local fallback: save to filesystem

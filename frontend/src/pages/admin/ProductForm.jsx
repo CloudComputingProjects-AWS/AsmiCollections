@@ -52,7 +52,6 @@ export default function ProductForm() {
         title: product.title || '', description: product.description || '',
         category_id: product.category_id || '', brand: product.brand || '',
         base_price: product.base_price || '', sale_price: product.sale_price || '',
-        hsn_code: product.hsn_code || '', gst_rate: product.gst_rate || 5,
         hsn_code: product.hsn_code || '', gst_rate: product.gst_rate ?? 5,
         meta_title: product.meta_title || '', meta_description: product.meta_description || '',
         is_active: product.is_active ?? true, is_featured: product.is_featured ?? false,
