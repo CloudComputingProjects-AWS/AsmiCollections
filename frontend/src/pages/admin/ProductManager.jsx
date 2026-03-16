@@ -79,11 +79,10 @@ export default function ProductManager() {
     { header: 'HSN', key: 'hsn_code' },
     { header: 'GST', render: (row) => `${row.gst_rate || 0}%` },
     { header: 'Variants', render: (row) => <span className="text-sm">{row.variants?.length || 0}</span> },
-    { header: 'Stock', render: (row) => (
-      <span className={`text-sm font-medium ${(row.variants?.reduce((s,v) => s + (v.stock_quantity || 0), 0) || 0) < 10 ? "text-red-600" : "text-gray-700"}`}>
-        {row.variants?.reduce((s,v) => s + (v.stock_quantity || 0), 0) || 0}
-      </span>
-    )},
+    { header: 'Stock', render: (row) => {
+      const totalStock = row.variants?.reduce((s,v) => s + (v.stock_quantity || 0), 0) || 0;
+      return <span className={`text-sm font-medium ${totalStock < 10 ? "text-red-600" : "text-gray-700"}`}>{totalStock}</span>;
+    }},
     { header: 'Status', render: (row) => (
       <div className="flex items-center gap-1">
         <StatusBadge status={row.is_active ? 'active' : 'inactive'} />

@@ -13,7 +13,7 @@ Orchestrates:
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from uuid import UUID
 
@@ -25,6 +25,10 @@ from app.services.gateways.razorpay_client import razorpay_client
 from app.services.gateways.stripe_client import stripe_client
 from app.services.fx_rate_service import get_fx_service
 from app.services.store_settings_service import StoreSettingsService
+from app.services.order_state_machine import validate_transition
+from app.services.invoice_service import InvoiceService
+from app.models.models import Refund
+from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +47,53 @@ class PaymentService:
         self.db = db
         self.repo = PaymentRepository(db)
         self.fx_service = get_fx_service(redis_client)
+
+    # ════════════════════════════════════════════════
+    # 0. PRIVATE HELPERS
+    # ════════════════════════════════════════════════
+
+    @staticmethod
+    def _to_gateway_amount(decimal_amount: Decimal) -> int:
+        """Convert Decimal rupees/dollars to gateway integer units (paise/cents).
+        DRY: replaces duplicated int((x * 100).to_integral_value(ROUND_HALF_UP)) pattern.
+        """
+        return int((decimal_amount * 100).to_integral_value(rounding=ROUND_HALF_UP))
+
+    async def _validate_order_for_payment(self, order_id: UUID, user_id: UUID):
+        """Validate order exists, belongs to user, and is in payable state.
+        DRY: replaces 4 identical guard blocks across payment initiation methods.
+        Returns the Order object for downstream use.
+        Raises PaymentServiceError on any validation failure.
+        """
+        order = await self.repo.get_order(order_id)
+        if not order:
+            raise PaymentServiceError(f"Order {order_id} not found")
+        if order.user_id != user_id:
+            raise PaymentServiceError("Order does not belong to this user")
+        if order.order_status != "placed":
+            raise PaymentServiceError(
+                f"Cannot initiate payment for order in '{order.order_status}' status"
+            )
+        if order.payment_status not in ("pending", "failed"):
+            raise PaymentServiceError(
+                f"Payment already in '{order.payment_status}' state"
+            )
+        return order
+
+    async def _ensure_razorpay_order(self, order, amount_paise: int) -> str:
+        """Return existing Razorpay order ID or create a new one.
+        DRY: replaces duplicated conditional Razorpay order creation in UPI methods.
+        """
+        rz_order_id = order.payment_gateway_order_id
+        if not rz_order_id:
+            rz_order = razorpay_client.create_order(
+                amount_paise=amount_paise,
+                currency=order.currency or "INR",
+                receipt=order.order_number,
+                notes={"order_id": str(order.id), "order_number": order.order_number},
+            )
+            rz_order_id = rz_order["id"]
+        return rz_order_id
 
     # ════════════════════════════════════════════════
     # 1. GATEWAY SELECTION
@@ -69,23 +120,8 @@ class PaymentService:
 
     async def create_razorpay_order(self, order_id: UUID, user_id: UUID) -> dict:
         """Create a Razorpay order for the given internal order."""
-        order = await self.repo.get_order(order_id)
-        if not order:
-            raise PaymentServiceError(f"Order {order_id} not found")
-        if str(order.user_id) != str(user_id):
-            raise PaymentServiceError("Order does not belong to this user")
-        if order.order_status != "placed":
-            raise PaymentServiceError(
-                f"Cannot initiate payment for order in '{order.order_status}' status"
-            )
-        if order.payment_status not in ("pending", "failed"):
-            raise PaymentServiceError(
-                f"Payment already in '{order.payment_status}' state"
-            )
-
-        amount_paise = int(
-            (order.grand_total * 100).to_integral_value(rounding=ROUND_HALF_UP)
-        )
+        order = await self._validate_order_for_payment(order_id, user_id)
+        amount_paise = self._to_gateway_amount(order.grand_total)
 
         rz_order = razorpay_client.create_order(
             amount_paise=amount_paise,
@@ -163,38 +199,14 @@ class PaymentService:
         }
 
     # ════════════════════════════════════════════════
-    # 4. STRIPE: CREATE PAYMENT INTENT
+    # 4. UPI: COLLECT / QR / POLL
     # ════════════════════════════════════════════════
 
     async def create_upi_collect(self, order_id: UUID, user_id: UUID, vpa: str) -> dict:
         """Initiate UPI collect request via Razorpay."""
-        order = await self.repo.get_order(order_id)
-        if not order:
-            raise PaymentServiceError(f"Order {order_id} not found")
-        if str(order.user_id) != str(user_id):
-            raise PaymentServiceError("Order does not belong to this user")
-        if order.order_status != "placed":
-            raise PaymentServiceError(
-                f"Cannot initiate payment for order in '{order.order_status}' status"
-            )
-        if order.payment_status not in ("pending", "failed"):
-            raise PaymentServiceError(
-                f"Payment already in '{order.payment_status}' state"
-            )
-
-        amount_paise = int(
-            (order.grand_total * 100).to_integral_value(rounding=ROUND_HALF_UP)
-        )
-
-        rz_order_id = order.payment_gateway_order_id
-        if not rz_order_id:
-            rz_order = razorpay_client.create_order(
-                amount_paise=amount_paise,
-                currency=order.currency or "INR",
-                receipt=order.order_number,
-                notes={"order_id": str(order_id), "order_number": order.order_number},
-            )
-            rz_order_id = rz_order["id"]
+        order = await self._validate_order_for_payment(order_id, user_id)
+        amount_paise = self._to_gateway_amount(order.grand_total)
+        rz_order_id = await self._ensure_razorpay_order(order, amount_paise)
 
         await self.repo.update_order_payment(
             order_id=order_id,
@@ -222,33 +234,9 @@ class PaymentService:
 
     async def create_upi_qr(self, order_id: UUID, user_id: UUID) -> dict:
         """Generate a UPI QR code for scan-to-pay via Razorpay."""
-        order = await self.repo.get_order(order_id)
-        if not order:
-            raise PaymentServiceError(f"Order {order_id} not found")
-        if str(order.user_id) != str(user_id):
-            raise PaymentServiceError("Order does not belong to this user")
-        if order.order_status != "placed":
-            raise PaymentServiceError(
-                f"Cannot initiate payment for order in '{order.order_status}' status"
-            )
-        if order.payment_status not in ("pending", "failed"):
-            raise PaymentServiceError(
-                f"Payment already in '{order.payment_status}' state"
-            )
-
-        amount_paise = int(
-            (order.grand_total * 100).to_integral_value(rounding=ROUND_HALF_UP)
-        )
-
-        rz_order_id = order.payment_gateway_order_id
-        if not rz_order_id:
-            rz_order = razorpay_client.create_order(
-                amount_paise=amount_paise,
-                currency=order.currency or "INR",
-                receipt=order.order_number,
-                notes={"order_id": str(order_id), "order_number": order.order_number},
-            )
-            rz_order_id = rz_order["id"]
+        order = await self._validate_order_for_payment(order_id, user_id)
+        amount_paise = self._to_gateway_amount(order.grand_total)
+        rz_order_id = await self._ensure_razorpay_order(order, amount_paise)
 
         qr_data = razorpay_client.create_qr_code(
             amount_paise=amount_paise,
@@ -268,7 +256,6 @@ class PaymentService:
         )
         await self.db.flush()
 
-        from datetime import timedelta
         expires = datetime.now(timezone.utc) + timedelta(minutes=5)
 
         return {
@@ -359,19 +346,7 @@ class PaymentService:
 
     async def create_stripe_intent(self, order_id: UUID, user_id: UUID) -> dict:
         """Create a Stripe PaymentIntent for the given order."""
-        order = await self.repo.get_order(order_id)
-        if not order:
-            raise PaymentServiceError(f"Order {order_id} not found")
-        if str(order.user_id) != str(user_id):
-            raise PaymentServiceError("Order does not belong to this user")
-        if order.order_status != "placed":
-            raise PaymentServiceError(
-                f"Cannot initiate payment for order in '{order.order_status}' status"
-            )
-        if order.payment_status not in ("pending", "failed"):
-            raise PaymentServiceError(
-                f"Payment already in '{order.payment_status}' state"
-            )
+        order = await self._validate_order_for_payment(order_id, user_id)
 
         target_currency = order.currency or "USD"
         if target_currency.upper() == "INR":
@@ -581,8 +556,6 @@ class PaymentService:
             logger.info("Order %s already marked paid, skipping", order_id)
             return
 
-        from app.services.order_state_machine import validate_transition
-
         current_status = order.order_status
         try:
             validate_transition(current_status, "confirmed")
@@ -616,7 +589,6 @@ class PaymentService:
 
         # ── Step 6: Generate Invoice (Phase 9) ──
         try:
-            from app.services.invoice_service import InvoiceService
             invoice_svc = InvoiceService(self.db)
             await invoice_svc.generate_invoice(order_id)
             logger.info("Invoice generated for order %s", order_id)
@@ -653,9 +625,6 @@ class PaymentService:
         if not gateway_refund_id:
             return
 
-        from app.models.models import Refund
-        from sqlalchemy import select
-
         result = await self.db.execute(
             select(Refund).where(Refund.gateway_refund_id == gateway_refund_id)
         )
@@ -691,9 +660,7 @@ class PaymentService:
         gateway_refund_id = None
 
         if gateway == "razorpay":
-            amount_paise = int(
-                (refund_amount * 100).to_integral_value(rounding=ROUND_HALF_UP)
-            )
+            amount_paise = self._to_gateway_amount(refund_amount)
             rz_refund = razorpay_client.create_refund(
                 payment_id=gateway_txn_id,
                 amount_paise=amount_paise if amount else None,
@@ -702,9 +669,7 @@ class PaymentService:
             gateway_refund_id = rz_refund.get("id")
 
         elif gateway == "stripe":
-            amount_cents = int(
-                (refund_amount * 100).to_integral_value(rounding=ROUND_HALF_UP)
-            )
+            amount_cents = self._to_gateway_amount(refund_amount)
             stripe_refund = stripe_client.create_refund(
                 payment_intent_id=order.payment_gateway_order_id,
                 amount_cents=amount_cents if amount else None,

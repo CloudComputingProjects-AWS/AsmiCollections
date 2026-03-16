@@ -13,8 +13,10 @@ COOKIE MIGRATION FIX (Session Feb 24 2026):
      and /auth/logout (must always work). Without this, rapid F5 refreshes
      hit the auth rate limit and cause 429 → phantom logout.
 """
+import json
 import time
 
+import redis.asyncio as aioredis
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -29,7 +31,6 @@ _redis_client = None
 async def _get_redis():
     global _redis_client
     if _redis_client is None:
-        import redis.asyncio as aioredis
         _redis_client = aioredis.from_url(
             settings.REDIS_URL,
             decode_responses=True,
@@ -111,7 +112,7 @@ class RateLimitMiddleware:
 
         if not allowed:
             response = Response(
-                content='{"detail":"Rate limit exceeded. Max ' + str(max_requests) + ' requests per minute."}',
+                content=json.dumps({"detail": f"Rate limit exceeded. Max {max_requests} requests per minute."}),
                 status_code=429,
                 media_type="application/json",
                 headers={

@@ -1,13 +1,13 @@
 /**
- * authStore.js — Zustand Auth Store
+ * authStore.js â€” Zustand Auth Store
  *
  * SECURITY (Updated 01-Mar-2026 S16): Full httpOnly cookie authentication.
  * - access_token: httpOnly cookie (set by backend, path="/")
  * - refresh_token: httpOnly cookie (set by backend, path="/api/v1/auth")
- * - NO tokens in localStorage — zero JS access to any token
- * - init() calls /auth/me — browser sends cookie automatically
+ * - NO tokens in localStorage â€” zero JS access to any token
+ * - init() calls /auth/me â€” browser sends cookie automatically
  *
- * Blueprint ref: Phase 1 — "Login with JWT in httpOnly cookies"
+ * Blueprint ref: Phase 1 â€” "Login with JWT in httpOnly cookies"
  */
 
 import { create } from 'zustand';
@@ -20,7 +20,7 @@ const useAuthStore = create((set, get) => ({
 
   /**
    * Initialize session on app startup (cold page load / F5 refresh).
-   * Calls /auth/me — browser automatically sends httpOnly access_token cookie.
+   * Calls /auth/me â€” browser automatically sends httpOnly access_token cookie.
    * If cookie is valid -> user is restored.
    * If expired/missing -> user stays null, loading set to false.
    *
@@ -39,7 +39,7 @@ const useAuthStore = create((set, get) => ({
     } catch (err) {
       const status = err?.status || err?.response?.status;
 
-      // 429 = rate limited — wait and retry once
+      // 429 = rate limited â€” wait and retry once
       if (status === 429) {
         try {
           await new Promise((r) => setTimeout(r, 1500));
@@ -47,18 +47,18 @@ const useAuthStore = create((set, get) => ({
           set({ user: userData, loading: false });
           return;
         } catch {
-          // Retry failed — treat as unauthenticated
+          // Retry failed â€” treat as unauthenticated
         }
       }
 
-      // 401 or any other failure — not authenticated
+      // 401 or any other failure â€” not authenticated
       set({ user: null, loading: false });
     }
   },
 
   /**
-   * Login — POST credentials, backend sets httpOnly access_token + refresh_token cookies.
-   * No tokens in JSON body — nothing to store client-side.
+   * Login â€” POST credentials, backend sets httpOnly access_token + refresh_token cookies.
+   * No tokens in JSON body â€” nothing to store client-side.
    * Then fetches /auth/me to get full user profile with role.
    */
   login: async (email, password) => {
@@ -72,7 +72,7 @@ const useAuthStore = create((set, get) => ({
         return res.data;
       }
 
-      // Both tokens are now in httpOnly cookies — nothing to store in JS
+      // Both tokens are now in httpOnly cookies â€” nothing to store in JS
 
       // Fetch full user profile (cookies are now set, browser sends them)
       const meRes = await apiClient.get('/auth/me');
@@ -85,27 +85,23 @@ const useAuthStore = create((set, get) => ({
   },
 
   /**
-   * Register — no auth needed, returns response for email verification flow.
+   * Register â€” no auth needed, returns response for email verification flow.
    */
   register: async (data) => {
-    try {
-      const res = await apiClient.post('/auth/register', data);
-      return res.data;
-    } catch (err) {
-      throw err;
-    }
+    const res = await apiClient.post('/auth/register', data);
+    return res.data;
   },
 
   /**
-   * Logout — backend clears both httpOnly cookies via response headers.
-   * No localStorage cleanup needed — tokens are not in JS.
+   * Logout â€” backend clears both httpOnly cookies via response headers.
+   * No localStorage cleanup needed â€” tokens are not in JS.
    */
   logout: async () => {
     try {
       await apiClient.post('/auth/logout');
     } catch {
-      // Silent — clear local state regardless
-      // Backend logout may fail if token already expired — that's fine
+      // Silent â€” clear local state regardless
+      // Backend logout may fail if token already expired â€” that's fine
     }
     set({ user: null });
   },

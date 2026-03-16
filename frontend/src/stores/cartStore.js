@@ -9,6 +9,8 @@ import apiClient from '../api/apiClient';
 
 const GUEST_CART_KEY = 'ashmi_guest_cart';
 
+const _countItems = (items) => items.reduce((sum, i) => sum + i.quantity, 0);
+
 const useCartStore = create(
   persist(
     (set, get) => ({
@@ -29,7 +31,7 @@ const useCartStore = create(
           set({
             items: data.items || [],
             cartId: data.id || data.cart_id,
-            itemCount: (data.items || []).reduce((sum, i) => sum + i.quantity, 0),
+            itemCount: _countItems(data.items || []),
             loading: false,
           });
         } catch (err) {
@@ -41,18 +43,18 @@ const useCartStore = create(
         if (!isAuthenticated) {
           // Guest: localStorage
           const { items } = get();
-          const existing = items.find((i) => i.product_variant_id === variantId);
+          const existing = items.find((i) => i.variant_id === variantId);
           let newItems;
           if (existing) {
             newItems = items.map((i) =>
-              i.product_variant_id === variantId ? { ...i, quantity: i.quantity + quantity } : i
+              i.variant_id === variantId ? { ...i, quantity: i.quantity + quantity } : i
             );
           } else {
             newItems = [...items, { variant_id: variantId, quantity }];
           }
           set({
             items: newItems,
-            itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
+            itemCount: _countItems(newItems),
           });
           return true;
         }
@@ -75,11 +77,11 @@ const useCartStore = create(
         if (!isAuthenticated) {
           const { items } = get();
           const newItems = items.map((i) =>
-            (i.id || i.product_variant_id) === itemId ? { ...i, quantity } : i
+            (i.id || i.variant_id) === itemId ? { ...i, quantity } : i
           );
           set({
             items: newItems,
-            itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
+            itemCount: _countItems(newItems),
           });
           return;
         }
@@ -94,10 +96,10 @@ const useCartStore = create(
       removeItem: async (itemId, isAuthenticated = false) => {
         if (!isAuthenticated) {
           const { items } = get();
-          const newItems = items.filter((i) => (i.id || i.product_variant_id) !== itemId);
+          const newItems = items.filter((i) => (i.id || i.variant_id) !== itemId);
           set({
             items: newItems,
-            itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
+            itemCount: _countItems(newItems),
           });
           return;
         }

@@ -256,8 +256,9 @@ class AuthService:
             )
         )
         tokens = result.scalars().all()
+        now = datetime.now(timezone.utc)
         for token in tokens:
-            token.revoked_at = datetime.now(timezone.utc)
+            token.revoked_at = now
 
     # ──────────────── Internal ────────────────
 
@@ -270,5 +271,6 @@ class AuthService:
             )
         )
         tokens = result.scalars().all()
+        now = datetime.now(timezone.utc)
         for token in tokens:
-            token.revoked_at = datetime.now(timezone.utc)
+            token.revoked_at = now

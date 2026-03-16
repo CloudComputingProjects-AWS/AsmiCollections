@@ -15,6 +15,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core.config import get_settings
 from app.core.database import async_session_factory
+from jose import JWTError
 from app.core.security import decode_token
 
 settings = get_settings()
@@ -128,8 +129,8 @@ class AdminAuditLogMiddleware:
             try:
                 payload = decode_token(token)
                 admin_id = payload.get("sub")
-            except Exception:
-                return  # Can't identify admin, skip logging
+            except (JWTError, AttributeError):
+                return  # Token invalid or expired — skip audit log
 
         if not admin_id:
             return

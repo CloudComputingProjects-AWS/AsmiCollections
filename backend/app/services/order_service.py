@@ -1,12 +1,12 @@
-"""
-Order Service — Phase 7.
+﻿"""
+Order Service â€” Phase 7.
 Checkout, GST tax engine, stock reservation, order state machine.
 """
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,10 +15,12 @@ from app.models.models import (
     Order, OrderItem, OrderStatusHistory, Product, ProductImage,
     ProductVariant, UserAddress,
 )
+from app.services.store_settings_service import StoreSettingsService
+from app.services.cart_coupon_service import CouponService
 
-# ══════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # ORDER STATE MACHINE
-# ══════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 ORDER_TRANSITIONS = {
     "placed":           ["confirmed", "cancelled"],
@@ -50,9 +52,9 @@ class OrderService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # TAX ENGINE
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     def calculate_tax(
         self, base_amount: Decimal, gst_rate: Decimal,
@@ -80,9 +82,9 @@ class OrderService:
             return {"cgst": Decimal("0"), "sgst": Decimal("0"), "igst": total_tax,
                     "total_tax": total_tax, "supply_type": "inter_state"}
 
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # ORDER SUMMARY (pre-checkout preview)
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     async def get_order_summary(self, user_id, shipping_address_id, coupon_code: str | None = None) -> dict:
         """Build order summary with tax breakdown before placing order."""
@@ -91,8 +93,7 @@ class OrderService:
         if not cart_items:
             raise OrderServiceError("Cart is empty.", 400)
 
-        from app.services.store_settings_service import StoreSettingsService as _SSS
-        seller_state = await _SSS.get_seller_state_static(self.db)
+        seller_state = await self._get_seller_state()
         items_detail, subtotal, tax_data = await self._calc_items_tax(cart_items, seller_state, address.state, address.country)
 
         discount = Decimal("0")
@@ -100,7 +101,6 @@ class OrderService:
             discount = await self._calc_discount(user_id, coupon_code, subtotal)
 
         # Dynamic shipping fee from store_settings
-        from app.services.store_settings_service import StoreSettingsService
         settings_svc = StoreSettingsService(self.db)
         ship_config = await settings_svc.get_shipping_config()
         threshold = Decimal(str(ship_config.get("free_shipping_threshold", 0)))
@@ -119,9 +119,9 @@ class OrderService:
             "currency": "INR",
         }
 
-    # ══════════════════════════════════════
-    # CHECKOUT — PLACE ORDER
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    # CHECKOUT â€” PLACE ORDER
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     async def place_order(self, user_id, data) -> Order:
         """
@@ -143,7 +143,7 @@ class OrderService:
         if not cart_items:
             raise OrderServiceError("Cart is empty.", 400)
 
-        from app.services.store_settings_service import StoreSettingsService as _SSS2; seller_state = await _SSS2.get_seller_state_static(self.db)
+        seller_state = await self._get_seller_state()
 
         # Lock variants and check stock
         for ci, variant, product in cart_items:
@@ -155,7 +155,7 @@ class OrderService:
             v = locked.scalar_one()
             if v.stock_quantity < ci.quantity:
                 raise OrderServiceError(
-                    f"'{product.title}' ({variant.size}/{variant.color}) — only {v.stock_quantity} left.", 400
+                    f"'{product.title}' ({variant.size}/{variant.color}) â€” only {v.stock_quantity} left.", 400
                 )
 
         # Create reservations
@@ -183,7 +183,6 @@ class OrderService:
                 coupon_id = coupon.id
 
         # Dynamic shipping fee from store_settings (same as get_order_summary)
-        from app.services.store_settings_service import StoreSettingsService
         settings_svc = StoreSettingsService(self.db)
         ship_config = await settings_svc.get_shipping_config()
         threshold = Decimal(str(ship_config.get("free_shipping_threshold", 0)))
@@ -273,20 +272,14 @@ class OrderService:
                 update(Coupon).where(Coupon.id == coupon_id).values(used_count=Coupon.used_count + 1)
             )
 
-        # Clear cart
-        cart_result = await self.db.execute(select(Cart).where(Cart.user_id == user_id))
-        cart = cart_result.scalar_one_or_none()
-        if cart:
-            await self.db.execute(
-                CartItem.__table__.delete().where(CartItem.cart_id == cart.id)
-            )
+        await self._clear_cart(user_id)
 
         await self.db.flush()
         return order
 
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # STATE MACHINE TRANSITION
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     async def transition_order(self, order_id, new_status: str, changed_by=None, reason: str = None) -> Order:
         result = await self.db.execute(
@@ -298,7 +291,7 @@ class OrderService:
 
         if not can_transition(order.order_status, new_status):
             raise OrderServiceError(
-                f"Illegal transition: {order.order_status} → {new_status}", 400
+                f"Illegal transition: {order.order_status} â†’ {new_status}", 400
             )
 
         old_status = order.order_status
@@ -307,11 +300,11 @@ class OrderService:
 
         # Side effects
         if new_status == "confirmed":
-            await self._deduct_stock(order_id)
+            await self._adjust_stock(order_id, -1)
             await self._release_reservations(order_id)
         elif new_status == "cancelled":
             if old_status in ("confirmed", "processing"):
-                await self._restore_stock(order_id)
+                await self._adjust_stock(order_id, +1)
             await self._release_reservations(order_id)
             order.payment_status = "refund_pending" if order.payment_status == "paid" else "cancelled"
 
@@ -324,9 +317,9 @@ class OrderService:
         await self.db.flush()
         return order
 
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # ORDER QUERIES
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     async def get_order(self, order_id, user_id=None) -> Order:
         query = select(Order).where(Order.id == order_id).options(selectinload(Order.items))
@@ -339,7 +332,6 @@ class OrderService:
         return order
 
     async def list_user_orders(self, user_id, page=1, page_size=10) -> tuple[list, int]:
-        from sqlalchemy import func
         query = select(Order).where(Order.user_id == user_id).options(selectinload(Order.items))
         count_q = select(func.count()).select_from(query.subquery())
         total = (await self.db.execute(count_q)).scalar()
@@ -360,7 +352,6 @@ class OrderService:
         }
 
     async def admin_list_orders(self, status=None, page=1, page_size=20) -> tuple[list, int]:
-        from sqlalchemy import func
         query = select(Order).options(selectinload(Order.items))
         if status:
             query = query.where(Order.order_status == status)
@@ -370,9 +361,24 @@ class OrderService:
         result = await self.db.execute(query)
         return list(result.scalars().unique().all()), total
 
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # HELPERS
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+    async def _get_seller_state(self) -> str:
+        """DRY: fetch seller state from store settings.
+        Replaces duplicated StoreSettingsService calls in get_order_summary and place_order.
+        """
+        return await StoreSettingsService.get_seller_state_static(self.db)
+
+    async def _clear_cart(self, user_id):
+        """SRP: cart-clearing logic extracted from place_order."""
+        cart_result = await self.db.execute(select(Cart).where(Cart.user_id == user_id))
+        cart = cart_result.scalar_one_or_none()
+        if cart:
+            await self.db.execute(
+                CartItem.__table__.delete().where(CartItem.cart_id == cart.id)
+            )
 
     async def _get_address(self, user_id, address_id) -> UserAddress:
         result = await self.db.execute(
@@ -414,38 +420,41 @@ class OrderService:
             line_subtotal = unit_price * ci.quantity
             subtotal += line_subtotal
             tax = self.calculate_tax(line_subtotal, product.gst_rate or Decimal("0"), seller_state, buyer_state, buyer_country)
-            total_cgst += tax["cgst"]; total_sgst += tax["sgst"]; total_igst += tax["igst"]; total_tax += tax["total_tax"]
+            total_cgst += tax["cgst"]
+            total_sgst += tax["sgst"]
+            total_igst += tax["igst"]
+            total_tax += tax["total_tax"]
             breakdowns.append({"hsn_code": product.hsn_code, "taxable_amount": line_subtotal,
                 "cgst_rate": (product.gst_rate or Decimal("0")) / 2 if tax["cgst"] > 0 else Decimal("0"),
                 "cgst_amount": tax["cgst"], "sgst_rate": (product.gst_rate or Decimal("0")) / 2 if tax["sgst"] > 0 else Decimal("0"),
                 "sgst_amount": tax["sgst"], "igst_rate": product.gst_rate or Decimal("0") if tax["igst"] > 0 else Decimal("0"),
                 "igst_amount": tax["igst"], "total_tax": tax["total_tax"]})
-            items_detail.append({"title": product.title, "sku": variant.sku, "size": variant.size,
-                "color": variant.color, "qty": ci.quantity, "unit_price": str(unit_price), "line_total": str(line_subtotal)})
+            items_detail.append({
+                "title": product.title,
+                "sku": variant.sku,
+                "size": variant.size,
+                "color": variant.color,
+                "qty": ci.quantity,
+                "unit_price": str(unit_price),
+                "line_total": str(line_subtotal),
+            })
         return items_detail, subtotal, {"total_tax": total_tax, "total_cgst": total_cgst, "total_sgst": total_sgst, "total_igst": total_igst, "breakdowns": breakdowns}
 
     async def _calc_discount(self, user_id, coupon_code, subtotal) -> Decimal:
-        from app.services.cart_coupon_service import CouponService
         svc = CouponService(self.db)
         result = await svc.apply_coupon(user_id, coupon_code, subtotal)
         return result.get("discount_amount", Decimal("0")) if result.get("valid") else Decimal("0")
 
-    async def _deduct_stock(self, order_id):
+    async def _adjust_stock(self, order_id, delta_sign: int):
+        """Adjust stock for all items in an order.
+        DRY: replaces _deduct_stock (delta_sign=-1) and _restore_stock (delta_sign=+1).
+        """
         result = await self.db.execute(select(OrderItem).where(OrderItem.order_id == order_id))
         for oi in result.scalars().all():
             if oi.product_variant_id:
                 await self.db.execute(
                     update(ProductVariant).where(ProductVariant.id == oi.product_variant_id)
-                    .values(stock_quantity=ProductVariant.stock_quantity - oi.quantity)
-                )
-
-    async def _restore_stock(self, order_id):
-        result = await self.db.execute(select(OrderItem).where(OrderItem.order_id == order_id))
-        for oi in result.scalars().all():
-            if oi.product_variant_id:
-                await self.db.execute(
-                    update(ProductVariant).where(ProductVariant.id == oi.product_variant_id)
-                    .values(stock_quantity=ProductVariant.stock_quantity + oi.quantity)
+                    .values(stock_quantity=ProductVariant.stock_quantity + (oi.quantity * delta_sign))
                 )
 
     async def _release_reservations(self, order_id):

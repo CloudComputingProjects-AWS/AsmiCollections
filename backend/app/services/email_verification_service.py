@@ -123,6 +123,41 @@ class EmailVerificationService:
 
         return await self.create_verification(user_id)
 
+    async def verify_email_by_token(self, token: str) -> User:
+        """
+        Verify email using legacy token link (backward compatibility).
+        Raises EmailVerificationError on invalid/expired token.
+        Returns the verified user.
+        """
+        from app.models.models import EmailVerification
+        token_hash = hash_token(token)
+        now = datetime.now(timezone.utc)
+
+        result = await self.db.execute(
+            select(EmailVerification).where(
+                EmailVerification.token_hash == token_hash,
+                EmailVerification.verified_at.is_(None),
+                EmailVerification.expires_at > now,
+            )
+        )
+        verification = result.scalar_one_or_none()
+        if not verification:
+            raise EmailVerificationError(
+                "Invalid or expired verification token.", status_code=400
+            )
+
+        verification.verified_at = now
+
+        user_result = await self.db.execute(
+            select(User).where(User.id == verification.user_id)
+        )
+        user = user_result.scalar_one_or_none()
+        if not user:
+            raise EmailVerificationError("User not found.", status_code=404)
+
+        user.email_verified = True
+        return user
+
     async def resend_verification_by_email(self, email: str) -> tuple[str, "User"]:
         """
         Resend OTP by email address (no auth required).

@@ -1,7 +1,7 @@
-"""
-Product Management Service — Phase 2.
+﻿"""
+Product Management Service â€” Phase 2.
 Business logic for: Categories, Products, Variants, Attributes, Inventory, Size Guides.
-Controller → Service → Repository pattern (service layer).
+Controller â†’ Service â†’ Repository pattern (service layer).
 """
 
 import uuid
@@ -41,14 +41,14 @@ class ProductService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # ATTRIBUTE DEFINITIONS
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     async def list_attribute_definitions(self, filterable_only: bool = False) -> list:
         query = select(AttributeDefinition).order_by(AttributeDefinition.sort_order)
         if filterable_only:
-            query = query.where(AttributeDefinition.is_filterable == True)
+            query = query.where(AttributeDefinition.is_filterable.is_(True))
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
@@ -100,9 +100,9 @@ class ProductService:
             raise ProductServiceError("Attribute definition not found.", 404)
         await self.db.delete(attr)
 
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # CATEGORIES
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     async def list_categories(
         self, gender: str | None = None, age_group: str | None = None, active_only: bool = True
@@ -113,7 +113,7 @@ class ProductService:
         if age_group:
             query = query.where(Category.age_group == age_group)
         if active_only:
-            query = query.where(Category.is_active == True)
+            query = query.where(Category.is_active.is_(True))
         query = query.order_by(Category.sort_order, Category.name)
         result = await self.db.execute(query)
         return list(result.scalars().all())
@@ -175,9 +175,9 @@ class ProductService:
         cat = await self.get_category(category_id)
         cat.soft_delete()
 
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # PRODUCTS
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     async def list_products(
         self,
@@ -234,12 +234,10 @@ class ProductService:
         return product
 
     async def create_product(self, data: ProductCreate, variants: list | None = None) -> Product:
-        # Check slug uniqueness
-        existing = await self.db.execute(
-            select(Product).where(Product.slug == data.slug)
-        )
-        if existing.scalar_one_or_none():
-            raise ProductServiceError(f"Slug '{data.slug}' already exists.", 409)
+        # Auto-generate slug from title if not provided
+        base_slug = data.slug if data.slug else slugify(data.title)
+        slug = await self._ensure_unique_slug(base_slug)
+        data = data.model_copy(update={"slug": slug})
 
         # Verify category exists
         cat_result = await self.db.execute(
@@ -319,9 +317,9 @@ class ProductService:
         for v in product.variants:
             v.soft_delete()
 
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # PRODUCT VARIANTS
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     async def create_variant(self, data: VariantCreate) -> ProductVariant:
         # Verify product exists
@@ -380,9 +378,9 @@ class ProductService:
             raise ProductServiceError("Variant not found.", 404)
         variant.soft_delete()
 
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # INVENTORY
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     async def list_inventory(
         self,
@@ -476,7 +474,7 @@ class ProductService:
                 ProductVariant.stock_quantity <= threshold,
                 ProductVariant.deleted_at.is_(None),
                 Product.deleted_at.is_(None),
-                ProductVariant.is_active == True,
+                ProductVariant.is_active.is_(True),
             )
             .order_by(ProductVariant.stock_quantity.asc())
         )
@@ -494,9 +492,9 @@ class ProductService:
             for v, p in rows
         ]
 
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # SIZE GUIDES
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     async def list_size_guides(self, category_id) -> list:
         result = await self.db.execute(
@@ -528,9 +526,9 @@ class ProductService:
             raise ProductServiceError("Size guide entry not found.", 404)
         await self.db.delete(guide)
 
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # PHASE 13G: SIZE MAPPING CONFIG
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     SIZE_MAPPINGS = {
         "standard_to_kids": {
@@ -587,9 +585,9 @@ class ProductService:
         mapping_key = f"{source_type}_to_{target_type}"
         return cls.SIZE_MAPPINGS.get(mapping_key, {})
 
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # PHASE 13G: BULK CREATE PRODUCTS
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     async def bulk_create_products(self, products_data: list) -> dict:
         """
@@ -620,12 +618,7 @@ class ProductService:
 
                 # Generate slug if not provided
                 slug = item.slug or slugify(item.title)
-                existing = await self.db.execute(
-                    select(Product).where(Product.slug == slug)
-                )
-                if existing.scalar_one_or_none():
-                    slug = f"{slug}-{uuid.uuid4().hex[:6]}"
-
+                slug = await self._ensure_unique_slug(slug)
                 product = Product(
                     title=item.title,
                     slug=slug,
@@ -690,9 +683,9 @@ class ProductService:
 
         return {"created": created, "failed": failed, "results": results}
 
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # PHASE 13G: DUPLICATE PRODUCT
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     async def duplicate_product(
         self, product_id, target_category_id, new_title: str | None = None,
@@ -723,11 +716,7 @@ class ProductService:
         # Generate title and slug
         title = new_title or f"{source.title} ({target_cat.gender.capitalize()})"
         slug = new_slug or slugify(title)
-        existing = await self.db.execute(
-            select(Product).where(Product.slug == slug)
-        )
-        if existing.scalar_one_or_none():
-            slug = f"{slug}-{uuid.uuid4().hex[:6]}"
+        slug = await self._ensure_unique_slug(slug)
 
         # Create duplicated product
         new_product = Product(
@@ -799,9 +788,9 @@ class ProductService:
             "size_mappings_applied": size_mappings_applied,
         }
 
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # BULK CSV UPLOAD
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     async def bulk_create_from_csv(self, rows: list[dict]) -> dict:
         """
@@ -819,6 +808,8 @@ class ProductService:
                     continue
 
                 slug = row.get("slug") or slugify(title)
+                slug = await self._ensure_unique_slug(slug)
+
                 base_price = row.get("base_price")
                 if not base_price:
                     errors.append({"row": idx, "error": "base_price is required"})
@@ -828,13 +819,6 @@ class ProductService:
                 if not category_id:
                     errors.append({"row": idx, "error": "category_id is required"})
                     continue
-
-                # Check slug collision, auto-increment if needed
-                existing = await self.db.execute(
-                    select(Product).where(Product.slug == slug)
-                )
-                if existing.scalar_one_or_none():
-                    slug = f"{slug}-{uuid.uuid4().hex[:6]}"
 
                 product = Product(
                     title=title,
@@ -879,9 +863,23 @@ class ProductService:
 
         return {"created": created, "errors": errors}
 
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     # HELPERS
-    # ══════════════════════════════════════
+    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+
+    async def _ensure_unique_slug(self, base_slug: str) -> str:
+        """Return a unique product slug by appending counter if collision found."""
+        slug = base_slug
+        counter = 1
+        while True:
+            existing = await self.db.execute(
+                select(Product).where(Product.slug == slug)
+            )
+            if not existing.scalar_one_or_none():
+                return slug
+            slug = f"{base_slug}-{counter}"
+            counter += 1
 
     @staticmethod
     def _generate_sku(brand: str, size: str | None, color: str | None) -> str:

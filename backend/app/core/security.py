@@ -4,7 +4,7 @@ Security utilities: password hashing, JWT creation/verification.
 
 import uuid
 from datetime import datetime, timedelta, timezone
-
+import hashlib
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
@@ -34,7 +34,8 @@ def create_access_token(
     role: str,
     expires_delta: timedelta | None = None,
 ) -> str:
-    expire = datetime.now(timezone.utc) + (
+    now = datetime.now(timezone.utc)
+    expire = now + (
         expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     payload = {
@@ -42,7 +43,7 @@ def create_access_token(
         "role": role,
         "type": "access",
         "exp": expire,
-        "iat": datetime.now(timezone.utc),
+        "iat": now,
         "jti": str(uuid.uuid4()),
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
@@ -54,7 +55,8 @@ def create_refresh_token(
 ) -> tuple[str, str, datetime]:
     """Returns (token_string, family_id, expires_at)."""
     family = family_id or str(uuid.uuid4())
-    expires_at = datetime.now(timezone.utc) + timedelta(
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(
         days=settings.REFRESH_TOKEN_EXPIRE_DAYS
     )
     payload = {
@@ -62,7 +64,7 @@ def create_refresh_token(
         "type": "refresh",
         "family": family,
         "exp": expires_at,
-        "iat": datetime.now(timezone.utc),
+        "iat": now,
         "jti": str(uuid.uuid4()),
     }
     token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
@@ -84,5 +86,4 @@ def decode_token(token: str) -> dict | None:
 
 def hash_token(token: str) -> str:
     """SHA-256 hash for storing refresh tokens securely."""
-    import hashlib
     return hashlib.sha256(token.encode()).hexdigest()

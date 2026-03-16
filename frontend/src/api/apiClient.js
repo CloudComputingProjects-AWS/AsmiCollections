@@ -24,11 +24,7 @@ const apiClient = axios.create({
   timeout: 30000,                  // 30s timeout — prevents hanging requests
 });
 
-// Request interceptor — no Authorization header needed (cookie is automatic)
-apiClient.interceptors.request.use(
-  (config) => config,
-  (error) => Promise.reject(error)
-);
+// No request interceptor needed -- cookies are sent automatically by browser
 
 // Response interceptor — handle 401 + token refresh
 let isRefreshing = false;
@@ -105,7 +101,7 @@ apiClient.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError);
         window.dispatchEvent(new CustomEvent('auth:expired'));
-        return Promise.reject(refreshError);
+        return Promise.reject(normalizeError(refreshError));
       } finally {
         isRefreshing = false;
       }

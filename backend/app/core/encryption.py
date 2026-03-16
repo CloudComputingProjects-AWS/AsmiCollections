@@ -13,7 +13,9 @@ Key must be 32 bytes, base64-encoded.
 """
 
 import base64
+import binascii
 import os
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from app.core.config import get_settings
@@ -28,8 +30,12 @@ def _get_key() -> bytes:
     """Get AES-256 key from config. Returns 32 bytes."""
     key_b64 = settings.PII_ENCRYPTION_KEY
     if not key_b64:
-        # In development, use a deterministic key (NOT for production)
-        return b"dev-only-32-byte-key-do-not-use!"
+        if settings.ENVIRONMENT == "development":
+            # Deterministic key for local dev only — NOT for production
+            return b"dev-only-32-byte-key-do-not-use!"
+        raise ValueError(
+            "PII_ENCRYPTION_KEY is not set. Cannot encrypt PII data in non-development environment."
+        )
     return base64.b64decode(key_b64)
 
 
@@ -57,8 +63,8 @@ def decrypt_pii(encrypted: str | None) -> str | None:
         ciphertext = raw[_NONCE_SIZE:]
         plaintext = aesgcm.decrypt(nonce, ciphertext, None)
         return plaintext.decode("utf-8")
-    except Exception:
-        # If decryption fails (e.g., data was not encrypted), return as-is
+    except (InvalidTag, ValueError, binascii.Error):
+        # Legacy plaintext or corrupted data — return as-is
         return encrypted
 
 

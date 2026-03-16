@@ -18,11 +18,15 @@ SameSite policy by ENVIRONMENT value:
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from app.core.security import decode_token
+from sqlalchemy import select
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.middleware.auth import get_current_user
 from app.models.models import User
+from app.core.security import hash_token
+from app.models.models import EmailVerification
+from datetime import datetime, timezone
 from app.schemas.auth import (
     EmailVerifyRequest,
     ForgotPasswordRequest,
@@ -224,8 +228,7 @@ async def logout(
 ):
     """Revoke all refresh tokens and clear both auth cookies.
     Handles case where token is already expired -- still clears cookies."""
-    from app.core.security import decode_token
-    from sqlalchemy import select
+   
 
     # Always clear BOTH cookies regardless of auth status
     _clear_auth_cookies(response)
@@ -283,33 +286,7 @@ async def verify_email_token(
     """Legacy: Verify email address using token link (backward compatibility)."""
     service = EmailVerificationService(db)
     try:
-        from app.core.security import hash_token
-        from app.models.models import EmailVerification
-        from sqlalchemy import select
-        from datetime import datetime, timezone
-
-        token_hash = hash_token(data.token)
-        now = datetime.now(timezone.utc)
-
-        result = await db.execute(
-            select(EmailVerification).where(
-                EmailVerification.token_hash == token_hash,
-                EmailVerification.verified_at.is_(None),
-                EmailVerification.expires_at > now,
-            )
-        )
-        verification = result.scalar_one_or_none()
-        if not verification:
-            raise EmailVerificationError("Invalid or expired verification token.", status_code=400)
-
-        verification.verified_at = now
-        user_result = await db.execute(
-            select(User).where(User.id == verification.user_id)
-        )
-        user = user_result.scalar_one_or_none()
-        if not user:
-            raise EmailVerificationError("User not found.", status_code=404)
-        user.email_verified = True
+        user = await service.verify_email_by_token(data.token)
         await db.commit()
         return MessageResponse(message=f"Email {user.email} verified successfully.")
     except EmailVerificationError as e:

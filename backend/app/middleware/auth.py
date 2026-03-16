@@ -72,7 +72,7 @@ async def get_current_active_user(
 ) -> User:
     """Ensure user is active and email verified."""
     if not user.is_active:
-        raise HTTPException(status_code=403, detail="Account disabled")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
     return user
 
 

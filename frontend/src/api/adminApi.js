@@ -26,12 +26,12 @@ export const productApi = {
 
 // ——— Variants ————————————————————————
 export const variantApi = {
-  list: (productId) => apiClient.get(`/admin/products/${productId}/variants`),
-  create: (productId, data) => apiClient.post(`/admin/products/${productId}/variants`, data),
+  list: (productId) => apiClient.get(`/admin/products/${productId}`).then(res => ({ data: (res.data.product || res.data).variants || [] })),
+  create: (productId, data) => apiClient.post('/admin/variants', { ...data, product_id: productId }),
   update: (productId, variantId, data) =>
-    apiClient.put(`/admin/products/${productId}/variants/${variantId}`, data),
+    apiClient.put(`/admin/variants/${variantId}`, data),
   delete: (productId, variantId) =>
-    apiClient.delete(`/admin/products/${productId}/variants/${variantId}`),
+    apiClient.delete(`/admin/variants/${variantId}`),
 };
 
 // ——— Categories ——————————————————————
@@ -125,14 +125,14 @@ export const reportApi = {
 // ——— Images ——————————————————————————        
 export const imageApi = {
   getUploadUrl: (productId, data) =>
-    apiClient.post(`/admin/products/${productId}/images/upload-url`, data),
-  list: (productId) => apiClient.get(`/admin/products/${productId}/images`),
+    apiClient.post(`/admin/images/upload/${productId}`, data),
+  list: (productId) => apiClient.get(`/admin/images/${productId}`),
   reorder: (productId, data) =>
-    apiClient.put(`/admin/products/${productId}/images/reorder`, data),
+    apiClient.post(`/admin/images/${productId}/reorder`, data),
   setPrimary: (productId, imageId) =>
-    apiClient.put(`/admin/products/${productId}/images/${imageId}/primary`),
+    apiClient.post(`/admin/images/set-primary/${imageId}`),
   delete: (productId, imageId) =>
-    apiClient.delete(`/admin/products/${productId}/images/${imageId}`),
+    apiClient.delete(`/admin/images/${imageId}`),
 };
 
 // ——— Size Guides —————————————————————

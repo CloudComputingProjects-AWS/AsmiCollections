@@ -10,6 +10,17 @@ import {
   settingsApi,
 } from '../api/adminApi';
 
+/** Trigger a browser file download from raw response data. */
+function _downloadBlob(data, filename, mimeType) {
+  const blob = mimeType ? new Blob([data], { type: mimeType }) : new Blob([data]);
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
 // ——— Dashboard Store —————————————————
 export const useDashboardStore = create((set) => ({
   stats: null,
@@ -261,22 +272,12 @@ export const useInvoiceStore = create((set) => ({
 
   downloadInvoice: async (id) => {
     const res = await invoiceApi.download(id);
-    const url = window.URL.createObjectURL(new Blob([res.data]));      
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `invoice-${id}.pdf`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    _downloadBlob(res.data, `invoice-${id}.pdf`);
   },
 
   downloadCreditNote: async (id) => {
     const res = await invoiceApi.downloadCN(id);
-    const url = window.URL.createObjectURL(new Blob([res.data]));      
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `credit-note-${id}.pdf`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    _downloadBlob(res.data, `credit-note-${id}.pdf`);
   },
 }));
 
@@ -340,15 +341,7 @@ export const useAuditStore = create((set) => ({
     set({ archiving: true });
     try {
       const response = await auditApi.archiveConfirm(months);
-      const blob = new Blob([response.data], { type: 'text/csv' });    
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'audit_logs_archive_' + new Date().toISOString().slice(0, 10) + '.csv';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
+      _downloadBlob(response.data, 'audit_logs_archive_' + new Date().toISOString().slice(0, 10) + '.csv', 'text/csv');
       set({ archiving: false, archiveCount: 0 });
       return true;
     } catch (err) {
@@ -386,12 +379,7 @@ export const useReportStore = create((set) => ({
 
   exportReport: async (type, params) => {
     const res = await reportApi.exportCsv(type, params);
-    const url = window.URL.createObjectURL(new Blob([res.data]));      
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${type}-report.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    _downloadBlob(res.data, `${type}-report.csv`);
   },
 }));
 

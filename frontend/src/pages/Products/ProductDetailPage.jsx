@@ -9,6 +9,7 @@ import useAuthStore from '../../stores/authStore';
 import Breadcrumb from '../../components/common/Breadcrumb';
 import useCartStore from '../../stores/cartStore';
 import DOMPurify from 'dompurify';
+import toast from 'react-hot-toast';
 
 export default function ProductDetailPage() {
   const { slug } = useParams();
@@ -67,10 +68,13 @@ export default function ProductDetailPage() {
     }
     if (!selectedVariant) return;
     setAddingToCart(true);
-    const ok = await addToCart(selectedVariant.id, quantity, true);
-    if (ok) toast.success('Added to cart!');
-    else toast.error('Failed to add to cart');
-    setAddingToCart(false);
+    try {
+      const ok = await addToCart(selectedVariant.id, quantity, true);
+      if (ok) toast.success('Added to cart!');
+      else toast.error('Failed to add to cart');
+    } finally {
+      setAddingToCart(false);
+    }
   };
 
 

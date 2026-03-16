@@ -1,5 +1,5 @@
 """
-Admin Product Management API Ã¢â‚¬â€ /api/v1/admin/
+Admin Product Management API -- /api/v1/admin/
 Phase 2: Categories, Products, Variants, Attributes, Inventory, Size Guides.
 All routes require admin roles (product_manager or admin).
 """
@@ -44,29 +44,44 @@ from app.schemas.product import (
 )
 from app.services.product_service import ProductService, ProductServiceError
 
-router = APIRouter(prefix="/admin", tags=["Admin Ã¢â‚¬â€ Product Management"])
+router = APIRouter(prefix="/admin", tags=["Admin - Product Management"])
 
 # Role dependencies
 product_mgr = require_role("product_manager", "admin")
 admin_only = require_role("admin")
 
 
+def get_product_service(db: AsyncSession = Depends(get_db)) -> ProductService:
+    """DRY: single factory for ProductService -- eliminates per-handler instantiations."""
+    return ProductService(db)
+
+
 def _handle_error(e: ProductServiceError):
     raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-# Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-# ATTRIBUTE DEFINITIONS
-# Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+def _make_paginated(items, total: int, page: int, page_size: int) -> PaginatedResponse:
+    """DRY: replaces duplicated PaginatedResponse construction."""
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=math.ceil(total / page_size) if total > 0 else 0,
+    )
 
+
+# ════════════════════════════════════════════════
+# ATTRIBUTE DEFINITIONS
+# ════════════════════════════════════════════════
 
 @router.get("/attribute-definitions", response_model=list[AttributeDefinitionResponse])
 async def list_attributes(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
     """List all attribute definitions."""
-    service = ProductService(db)
     return await service.list_attribute_definitions()
 
 
@@ -75,9 +90,9 @@ async def create_attribute(
     data: AttributeDefinitionCreate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
     """Create a new attribute definition."""
-    service = ProductService(db)
     try:
         attr = await service.create_attribute_definition(data)
         await db.commit()
@@ -92,9 +107,9 @@ async def update_attribute(
     data: AttributeDefinitionUpdate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
     """Update an attribute definition."""
-    service = ProductService(db)
     try:
         attr = await service.update_attribute_definition(attr_id, data)
         await db.commit()
@@ -108,9 +123,9 @@ async def delete_attribute(
     attr_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(admin_only),
+    service: ProductService = Depends(get_product_service),
 ):
     """Delete an attribute definition (admin only)."""
-    service = ProductService(db)
     try:
         await service.delete_attribute_definition(attr_id)
         await db.commit()
@@ -119,10 +134,9 @@ async def delete_attribute(
         _handle_error(e)
 
 
-# Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+# ════════════════════════════════════════════════
 # CATEGORIES
-# Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-
+# ════════════════════════════════════════════════
 
 @router.get("/categories", response_model=list[CategoryResponse])
 async def list_categories(
@@ -131,9 +145,9 @@ async def list_categories(
     active_only: bool = True,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
     """List categories with optional filters."""
-    service = ProductService(db)
     return await service.list_categories(gender, age_group, active_only)
 
 
@@ -142,8 +156,8 @@ async def get_category(
     category_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
-    service = ProductService(db)
     try:
         return await service.get_category(category_id)
     except ProductServiceError as e:
@@ -155,8 +169,8 @@ async def create_category(
     data: CategoryCreate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
-    service = ProductService(db)
     try:
         cat = await service.create_category(data)
         await db.commit()
@@ -171,8 +185,8 @@ async def update_category(
     data: CategoryUpdate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
-    service = ProductService(db)
     try:
         cat = await service.update_category(category_id, data)
         await db.commit()
@@ -186,9 +200,9 @@ async def delete_category(
     category_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
     """Soft-delete a category."""
-    service = ProductService(db)
     try:
         await service.delete_category(category_id)
         await db.commit()
@@ -197,10 +211,9 @@ async def delete_category(
         _handle_error(e)
 
 
-# Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+# ════════════════════════════════════════════════
 # PRODUCTS
-# Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-
+# ════════════════════════════════════════════════
 
 @router.get("/products", response_model=PaginatedResponse)
 async def list_products(
@@ -213,9 +226,9 @@ async def list_products(
     search: str | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
     """List products with pagination, filters, search."""
-    service = ProductService(db)
     products, total = await service.list_products(
         page=page,
         page_size=page_size,
@@ -225,12 +238,11 @@ async def list_products(
         is_featured=is_featured,
         search=search,
     )
-    return PaginatedResponse(
+    return _make_paginated(
         items=[ProductResponse.model_validate(p) for p in products],
         total=total,
         page=page,
         page_size=page_size,
-        total_pages=math.ceil(total / page_size) if total > 0 else 0,
     )
 
 
@@ -239,8 +251,8 @@ async def get_product(
     product_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
-    service = ProductService(db)
     try:
         return await service.get_product(product_id)
     except ProductServiceError as e:
@@ -250,16 +262,14 @@ async def get_product(
 @router.post("/products", response_model=ProductResponse, status_code=201)
 async def create_product(
     data: ProductCreate,
-    variants: list[ProductVariantInline] | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
     """Create product with optional inline variants."""
-    service = ProductService(db)
     try:
-        product = await service.create_product(data, variants)
+        product = await service.create_product(data, None)
         await db.commit()
-        # Reload with relationships
         return await service.get_product(product.id)
     except ProductServiceError as e:
         _handle_error(e)
@@ -271,8 +281,8 @@ async def update_product(
     data: ProductUpdate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
-    service = ProductService(db)
     try:
         await service.update_product(product_id, data)
         await db.commit()
@@ -286,9 +296,9 @@ async def delete_product(
     product_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
     """Soft-delete product and its variants."""
-    service = ProductService(db)
     try:
         await service.delete_product(product_id)
         await db.commit()
@@ -297,18 +307,17 @@ async def delete_product(
         _handle_error(e)
 
 
-# Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+# ════════════════════════════════════════════════
 # PRODUCT VARIANTS
-# Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-
+# ════════════════════════════════════════════════
 
 @router.post("/variants", response_model=ProductVariantResponse, status_code=201)
 async def create_variant(
     data: VariantCreate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
-    service = ProductService(db)
     try:
         variant = await service.create_variant(data)
         await db.commit()
@@ -323,8 +332,8 @@ async def update_variant(
     data: VariantUpdate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
-    service = ProductService(db)
     try:
         variant = await service.update_variant(variant_id, data)
         await db.commit()
@@ -338,8 +347,8 @@ async def delete_variant(
     variant_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
-    service = ProductService(db)
     try:
         await service.delete_variant(variant_id)
         await db.commit()
@@ -348,10 +357,9 @@ async def delete_variant(
         _handle_error(e)
 
 
-# Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+# ════════════════════════════════════════════════
 # INVENTORY
-# Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-
+# ════════════════════════════════════════════════
 
 @router.get("/inventory", response_model=PaginatedResponse)
 async def list_inventory(
@@ -361,22 +369,16 @@ async def list_inventory(
     low_stock_only: bool = False,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
     """List all product variants with stock info for admin inventory page."""
-    service = ProductService(db)
     items, total = await service.list_inventory(
         page=page,
         page_size=page_size,
         search=search,
         low_stock_only=low_stock_only,
     )
-    return PaginatedResponse(
-        items=items,
-        total=total,
-        page=page,
-        page_size=page_size,
-        total_pages=math.ceil(total / page_size) if total > 0 else 0,
-    )
+    return _make_paginated(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.put("/inventory/{variant_id}", response_model=ProductVariantResponse)
@@ -385,9 +387,9 @@ async def update_inventory(
     data: InventoryUpdateRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
     """Update stock quantity for a single variant."""
-    service = ProductService(db)
     try:
         variant = await service.update_stock(variant_id, data.stock_quantity)
         await db.commit()
@@ -401,9 +403,9 @@ async def bulk_update_inventory(
     data: InventoryBulkUpdateRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
     """Bulk update stock quantities."""
-    service = ProductService(db)
     try:
         await service.bulk_update_stock(data.items)
         await db.commit()
@@ -417,9 +419,9 @@ async def get_low_stock(
     threshold: int = Query(10, ge=0),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
     """Get variants with stock below threshold."""
-    service = ProductService(db)
     return await service.get_low_stock_variants(threshold)
 
 
@@ -428,29 +430,23 @@ async def bulk_update_inventory_alias(
     data: InventoryBulkUpdateRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
-    """Alias for PUT /inventory/bulk Ã¢â‚¬â€ matches frontend POST /bulk-update call."""
-    service = ProductService(db)
-    try:
-        await service.bulk_update_stock(data.items)
-        await db.commit()
-        return MessageResponse(message=f"Updated {len(data.items)} variants.")
-    except ProductServiceError as e:
-        _handle_error(e)
+    """Alias for PUT /inventory/bulk -- matches frontend POST /bulk-update call."""
+    return await bulk_update_inventory(data=data, db=db, user=user, service=service)
 
 
-# Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+# ════════════════════════════════════════════════
 # SIZE GUIDES
-# Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-
+# ════════════════════════════════════════════════
 
 @router.get("/size-guides/{category_id}", response_model=list[SizeGuideResponse])
 async def list_size_guides(
     category_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
-    service = ProductService(db)
     return await service.list_size_guides(category_id)
 
 
@@ -459,8 +455,8 @@ async def create_size_guide(
     data: SizeGuideCreate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
-    service = ProductService(db)
     try:
         guide = await service.create_size_guide(data)
         await db.commit()
@@ -474,8 +470,8 @@ async def delete_size_guide(
     guide_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
-    service = ProductService(db)
     try:
         await service.delete_size_guide(guide_id)
         await db.commit()
@@ -484,16 +480,16 @@ async def delete_size_guide(
         _handle_error(e)
 
 
-# Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+# ════════════════════════════════════════════════
 # BULK CSV UPLOAD
-# Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-
+# ════════════════════════════════════════════════
 
 @router.post("/products/bulk-upload")
 async def bulk_upload_products(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
 ):
     """
     Upload products via CSV file.
@@ -516,7 +512,6 @@ async def bulk_upload_products(
     if not rows:
         raise HTTPException(status_code=400, detail="CSV file is empty.")
 
-    service = ProductService(db)
     result = await service.bulk_create_from_csv(rows)
     await db.commit()
 
@@ -528,10 +523,9 @@ async def bulk_upload_products(
     }
 
 
-# Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+# ════════════════════════════════════════════════
 # PHASE 13G: BULK CREATE & DUPLICATE
-# Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-
+# ════════════════════════════════════════════════
 
 @router.post(
     "/products/bulk",
@@ -542,12 +536,12 @@ async def bulk_create_products(
     data: BulkProductCreateRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(admin_only),
+    service: ProductService = Depends(get_product_service),
 ):
     """
     Admin: Create multiple products with inline variants in one API call.
     Accepts up to 50 products per request, each with their own category and variants.
     """
-    service = ProductService(db)
     result = await service.bulk_create_products(data.products)
     await db.commit()
     return BulkProductCreateResponse(**result)
@@ -563,12 +557,12 @@ async def duplicate_product(
     data: ProductDuplicateRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(admin_only),
+    service: ProductService = Depends(get_product_service),
 ):
     """
     Admin: Clone a product to a different category/gender.
-    Auto-maps size variants (e.g., S/M/L/XL Ã¢â€ â€™ 4-6/7-9/10-12/13-15/16+ for kids).
+    Auto-maps size variants (e.g., S/M/L/XL to 4-6/7-9/10-12/13-15/16+ for kids).
     """
-    service = ProductService(db)
     try:
         result = await service.duplicate_product(
             product_id=product_id,
@@ -592,23 +586,19 @@ async def get_size_mappings(
     user: User = Depends(product_mgr),
 ):
     """Returns size mapping config for cross-category duplication."""
+    mapping_pairs = [
+        ("standard", "kids",     "standard_to_kids"),
+        ("kids",     "standard", "kids_to_standard"),
+        ("standard", "waist",    "standard_to_waist"),
+        ("waist",    "standard", "waist_to_standard"),
+    ]
     return [
         SizeMappingResponse(
-            source_type="standard", target_type="kids",
-            mappings=ProductService.SIZE_MAPPINGS["standard_to_kids"],
-        ),
-        SizeMappingResponse(
-            source_type="kids", target_type="standard",
-            mappings=ProductService.SIZE_MAPPINGS["kids_to_standard"],
-        ),
-        SizeMappingResponse(
-            source_type="standard", target_type="waist",
-            mappings=ProductService.SIZE_MAPPINGS["standard_to_waist"],
-        ),
-        SizeMappingResponse(
-            source_type="waist", target_type="standard",
-            mappings=ProductService.SIZE_MAPPINGS["waist_to_standard"],
-        ),
+            source_type=src,
+            target_type=tgt,
+            mappings=ProductService.SIZE_MAPPINGS[key],
+        )
+        for src, tgt, key in mapping_pairs
     ]
 
 
