@@ -618,8 +618,11 @@ async def upload_pdf_to_s3(
 ) -> str:
     """
     Upload PDF to S3 and return the URL.
+    Uses sync boto3 via asyncio.to_thread (boto3 is already installed).
     If S3 is not configured, saves to local /tmp and returns local path.
     """
+    import asyncio
+
     if bucket is None:
         bucket = os.getenv("S3_BUCKET_NAME", "")
 
@@ -633,20 +636,22 @@ async def upload_pdf_to_s3(
         return str(local_path)
 
     try:
-        import aioboto3
+        import boto3
 
-        session = aioboto3.Session()
-        async with session.client(
-            "s3",
-            region_name=os.getenv("AWS_REGION", "ap-south-1"),
-        ) as s3:
-            await s3.put_object(
+        def _sync_upload():
+            s3 = boto3.client(
+                "s3",
+                region_name=os.getenv("AWS_REGION", "ap-south-1"),
+            )
+            s3.put_object(
                 Bucket=bucket,
                 Key=s3_key,
                 Body=pdf_bytes,
                 ContentType=content_type,
                 CacheControl="max-age=31536000",
             )
+
+        await asyncio.to_thread(_sync_upload)
 
         cdn_domain = os.getenv("CLOUDFRONT_DOMAIN", "")
         if cdn_domain:
@@ -657,13 +662,6 @@ async def upload_pdf_to_s3(
         logger.info(f"PDF uploaded to S3: {url}")
         return url
 
-    except ImportError:
-        logger.warning("aioboto3 not installed, saving PDF locally")
-        local_dir = Path("/tmp/invoices")
-        local_dir.mkdir(parents=True, exist_ok=True)
-        local_path = local_dir / s3_key.replace("/", "_")
-        local_path.write_bytes(pdf_bytes)
-        return str(local_path)
     except Exception as e:
         logger.error(f"S3 upload failed: {e}, saving locally")
         local_dir = Path("/tmp/invoices")
