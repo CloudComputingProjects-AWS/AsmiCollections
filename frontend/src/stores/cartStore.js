@@ -165,7 +165,7 @@ const useCartStore = create(
       getSubtotal: () => {
         const { items } = get();
         return items.reduce((sum, i) => {
-          const price = i.unit_price || i.price || i.product?.sale_price || i.product?.base_price || 0;
+          const price = i.unit_price || 0;
           return sum + price * i.quantity;
         }, 0);
       },

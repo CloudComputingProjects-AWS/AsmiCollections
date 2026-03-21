@@ -85,8 +85,26 @@ class ImageService:
             )
 
         # Generate S3 key
-        image_uuid = str(uuid.uuid4())
-        s3_key = f"uploads/raw/{product_id}/{image_uuid}{ext}"
+        # Create pending image record FIRST to get database ID
+        is_primary = current_count == 0  # First image is primary
+
+        image = ProductImage(
+            product_id=product_id,
+            original_url="pending",  # Will update after S3 key is known
+            alt_text=filename,
+            is_primary=is_primary,
+            sort_order=current_count,
+            processing_status="pending",
+        )
+        self.db.add(image)
+        await self.db.flush()  # image.id is now available
+
+        # Generate S3 key using database record ID (so Lambda can extract it)
+        s3_key = f"uploads/raw/{product_id}/{image.id}{ext}"
+
+        # Update original_url with actual S3 path
+        image.original_url = f"s3://{os.environ['S3_BUCKET_NAME']}/{s3_key}"
+        await self.db.flush()
 
         # Generate pre-signed URL using boto3
         try:
@@ -107,21 +125,6 @@ class ImageService:
                 presigned_url = f"https://mock-s3-bucket.s3.amazonaws.com/{s3_key}?mock=true"
             else:
                 raise ImageServiceError(f"Failed to generate upload URL: {str(e)}", 500)
-
-        # Determine sort order and primary status
-        is_primary = current_count == 0  # First image is primary
-
-        # Create pending image record
-        image = ProductImage(
-            product_id=product_id,
-            original_url=f"s3://{os.environ['S3_BUCKET_NAME']}/{s3_key}",
-            alt_text=filename,
-            is_primary=is_primary,
-            sort_order=current_count,
-            processing_status="pending",
-        )
-        self.db.add(image)
-        await self.db.flush()
 
         return {
             "upload_url": presigned_url,

@@ -1,5 +1,6 @@
 /**
- * CartPage â€” Shopping cart with quantities, coupon, subtotal, stock check.
+ * CartPage -- Shopping cart with quantities, coupon, subtotal, stock check.
+ * Field mapping: all item fields from backend CartItemResponse schema (cart_coupon.py)
  */
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -33,29 +34,33 @@ export default function CartPage() {
   }, [error]);
 
   const subtotal = getSubtotal();
-  // Shipping config from store_settings (admin-configurable)
-  const [shippingFee, setShippingFee] = useState(79);
-  const [shippingThreshold, setShippingThreshold] = useState(999);
+  // Shipping config from store_settings (admin-configurable via API)
+  const [shippingFee, setShippingFee] = useState(0);
+  const [shippingThreshold, setShippingThreshold] = useState(0);
+  const [shippingLoaded, setShippingLoaded] = useState(false);
   useEffect(() => {
     apiClient.get('/catalog/shipping-config')
       .then(res => {
-        setShippingFee(Number(res.data.shipping_fee) || 79);
-        setShippingThreshold(Number(res.data.free_shipping_threshold) || 999);
+        setShippingFee(Number(res.data.shipping_fee));
+        setShippingThreshold(Number(res.data.free_shipping_threshold));
+        setShippingLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => {
+        setShippingLoaded(true);
+      });
   }, []);
-  const shipping = subtotal >= shippingThreshold ? 0 : shippingFee;
+  const shipping = shippingLoaded && shippingThreshold > 0 && subtotal >= shippingThreshold ? 0 : shippingFee;
   const discount = couponDiscount || 0;
   const total = subtotal + shipping - discount;
 
-  const handleQty = (itemId, currentQty, delta) => {
+  const handleQty = (variantId, currentQty, delta) => {
     const newQty = currentQty + delta;
     if (newQty < 1) return;
     if (newQty > 10) {
       toast.error('Maximum 10 per item');
       return;
     }
-    updateQuantity(itemId, newQty, isAuth);
+    updateQuantity(variantId, newQty, isAuth);
   };
 
   const handleApplyCoupon = async () => {
@@ -64,7 +69,7 @@ export default function CartPage() {
     const result = await applyCoupon(couponCode.trim());
     setCouponLoading(false);
     if (result.success) {
-      toast.success(`Coupon applied! You save â‚¹${result.discount}`);
+      toast.success(`Coupon applied! You save \u20B9${result.discount}`);
     } else {
       toast.error(result.error);
     }
@@ -151,60 +156,59 @@ export default function CartPage() {
             {/* Cart Items */}
             <div className="lg:col-span-2 space-y-4">
               {items.map((item) => {
-                const product = item.product || {};
-                const image =
-                  item.image_url || product.images?.[0]?.thumbnail_url || '/placeholder-product.jpg';
-                const title = item.product_title_snapshot || product.title || 'Product';
-                const price = item.unit_price || product.sale_price || product.base_price || 0;
-                const stock = item.stock_available ?? item.stock ?? 999;
-                const lowStock = stock > 0 && stock <= 5;
-                const itemKey = item.product_variant_id || item.variant_id || item.id;
+                const lowStock = item.stock_quantity != null && item.stock_quantity > 0 && item.stock_quantity <= 5;
 
                 return (
                   <div
-                    key={itemKey}
+                    key={item.variant_id}
                     className="bg-white rounded-xl border p-4 flex gap-4 hover:shadow-sm transition"
                   >
                     {/* Image */}
                     <Link
-                      to={`/products/${product.slug || product.id || ''}`}
+                      to={item.product_slug ? `/products/${item.product_slug}` : '#'}
                       className="w-24 h-28 sm:w-28 sm:h-32 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100"
                     >
-                      <img
-                        src={image}
-                        alt={title}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                      />
+                      {item.image_url ? (
+                        <img
+                          src={item.image_url}
+                          alt={item.product_title || ''}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <ShoppingBag className="w-8 h-8 text-gray-300" />
+                        </div>
+                      )}
                     </Link>
 
                     {/* Details */}
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-start">
                         <div>
-                          {(item.brand_snapshot || product.brand) && (
+                          {item.brand && (
                             <p className="text-xs text-gray-400 uppercase tracking-wider">
-                              {item.brand_snapshot || product.brand}
+                              {item.brand}
                             </p>
                           )}
                           <h3 className="font-medium text-gray-900 text-sm mt-0.5 line-clamp-2">
-                            {title}
+                            {item.product_title}
                           </h3>
                           <div className="flex flex-wrap gap-2 mt-1.5">
-                            {(item.size_snapshot || item.size) && (
+                            {item.size && (
                               <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                                Size: {item.size_snapshot || item.size}
+                                Size: {item.size}
                               </span>
                             )}
-                            {(item.color_snapshot || item.color) && (
+                            {item.color && (
                               <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                                Color: {item.color_snapshot || item.color}
+                                Color: {item.color}
                               </span>
                             )}
                           </div>
                         </div>
                         <button
-                          onClick={() => removeItem(itemKey, isAuth)}
+                          onClick={() => removeItem(item.variant_id, isAuth)}
                           className="p-1.5 hover:bg-red-50 rounded-lg text-gray-400 hover:text-red-500 transition"
                         >
                           <X className="w-4 h-4" />
@@ -215,7 +219,7 @@ export default function CartPage() {
                       {lowStock && (
                         <div className="flex items-center gap-1 mt-2 text-amber-600">
                           <AlertTriangle className="w-3.5 h-3.5" />
-                          <span className="text-xs font-medium">Only {stock} left</span>
+                          <span className="text-xs font-medium">Only {item.stock_quantity} left</span>
                         </div>
                       )}
 
@@ -223,7 +227,7 @@ export default function CartPage() {
                       <div className="flex items-center justify-between mt-3">
                         <div className="flex items-center border rounded-lg">
                           <button
-                            onClick={() => handleQty(itemKey, item.quantity, -1)}
+                            onClick={() => handleQty(item.variant_id, item.quantity, -1)}
                             disabled={item.quantity <= 1}
                             className="p-2 hover:bg-gray-50 disabled:opacity-30 transition"
                           >
@@ -233,14 +237,16 @@ export default function CartPage() {
                             {item.quantity}
                           </span>
                           <button
-                            onClick={() => handleQty(itemKey, item.quantity, 1)}
-                            disabled={item.quantity >= Math.min(10, stock)}
+                            onClick={() => handleQty(item.variant_id, item.quantity, 1)}
+                            disabled={item.stock_quantity != null && item.quantity >= Math.min(10, item.stock_quantity)}
                             className="p-2 hover:bg-gray-50 disabled:opacity-30 transition"
                           >
                             <Plus className="w-3.5 h-3.5" />
                           </button>
                         </div>
-                        <p className="font-bold text-gray-900">{formatPrice(price * item.quantity)}</p>
+                        <p className="font-bold text-gray-900">
+                          {formatPrice(item.line_total != null ? item.line_total : (item.unit_price || 0) * item.quantity)}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -308,9 +314,9 @@ export default function CartPage() {
                       <span>-{formatPrice(discount)}</span>
                     </div>
                   )}
-                  {shipping > 0 && (
+                  {shipping > 0 && shippingThreshold > 0 && (
                     <p className="text-xs text-gray-400">
-                      Free shipping on orders above â‚¹999
+                      {`Free shipping on orders above \u20B9${shippingThreshold.toLocaleString('en-IN')}`}
                     </p>
                   )}
                   <hr />

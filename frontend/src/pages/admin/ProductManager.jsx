@@ -52,8 +52,8 @@ export default function ProductManager() {
       header: 'Product',
       render: (row) => (
         <div className="flex items-center gap-3">
-          {row.primary_image ? (
-            <img src={row.primary_image} alt="" className="w-10 h-10 rounded-lg object-cover" />
+          {row.primary_image_url ? (
+            <img src={row.primary_image_url} alt="" className="w-10 h-10 rounded-lg object-cover" />
           ) : (
             <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-600 text-xs">No img</div>
           )}

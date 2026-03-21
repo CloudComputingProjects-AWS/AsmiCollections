@@ -5,10 +5,11 @@ import { ShoppingBag, Star } from 'lucide-react';
 export default function ProductCard({ product, className = '' }) {
   const [imgError, setImgError] = useState(false);
 
+  const primaryImage = product.images?.find(img => img.is_primary) || product.images?.[0];
   const imageUrl =
-    product.primary_image?.thumbnail_url ||
-    product.primary_image?.medium_url ||
-    product.primary_image?.original_url ||
+    primaryImage?.thumbnail_url ||
+    primaryImage?.medium_url ||
+    primaryImage?.original_url ||
     null;
 
   const displayPrice = product.sale_price || product.base_price;

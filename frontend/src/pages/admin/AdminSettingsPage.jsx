@@ -92,12 +92,10 @@ export default function AdminSettingsPage() {
   useEffect(() => {
     const fetchShipping = async () => {
       try {
-        const res = await fetch('/api/v1/catalog/shipping-config');
-        if (res.ok) {
-          const data = await res.json();
-          setShippingFee(String(data.shipping_fee ?? ''));
-          setShippingThreshold(String(data.free_shipping_threshold ?? ''));
-        }
+        const res = await apiClient.get('/catalog/shipping-config');
+        const data = res.data;
+        setShippingFee(String(data.shipping_fee ?? ''));
+        setShippingThreshold(String(data.free_shipping_threshold ?? ''));
       } catch {
         // Silent fail - fields stay empty, user can still set values
       } finally {
@@ -198,20 +196,14 @@ export default function AdminSettingsPage() {
     }
     setShippingLoading(true);
     try {
-      const res = await fetch('/api/v1/admin/settings/shipping', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ shipping_fee: fee, free_shipping_threshold: threshold }),
+      await apiClient.put('/admin/settings/shipping', {
+        shipping_fee: fee,
+        free_shipping_threshold: threshold,
       });
-      if (res.ok) {
-        toast.success('Shipping configuration updated');
-      } else {
-        const err = await res.json();
-        toast.error(err.detail || 'Failed to update shipping config');
-      }
-    } catch {
-      toast.error('Network error');
+      toast.success('Shipping configuration updated');
+    } catch (err) {
+      const msg = err.response?.data?.detail || 'Failed to update shipping config';
+      toast.error(msg);
     } finally {
       setShippingLoading(false);
     }
@@ -285,7 +277,7 @@ export default function AdminSettingsPage() {
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
       </div>
 
-      {/* ───── Seller / Business Configuration ───── */}
+      {/* Seller / Business Configuration */}
       <section
         className="bg-white rounded-lg border border-gray-200 overflow-hidden"
         aria-labelledby="seller-config-heading"
@@ -475,7 +467,7 @@ export default function AdminSettingsPage() {
         </div>
       </section>
 
-      {/* ───── Shipping Configuration ───── */}
+      {/* Shipping Configuration */}
       <section
         className="bg-white rounded-lg border border-gray-200 overflow-hidden"
         aria-labelledby="shipping-config-heading"
@@ -592,7 +584,7 @@ export default function AdminSettingsPage() {
         </div>
       </section>
 
-      {/* ───── Payment Configuration ───── */}
+      {/* Payment Configuration */}
       <section
         className="bg-white rounded-lg border border-gray-200 overflow-hidden"
         aria-labelledby="upi-config-heading"
@@ -763,7 +755,7 @@ export default function AdminSettingsPage() {
         </div>
       )}
 
-      {/* ───── UPI VPA Audit Trail ───── */}
+      {/* UPI VPA Audit Trail */}
       <section
         className="bg-white rounded-lg border border-gray-200 overflow-hidden"
         aria-labelledby="audit-heading"
