@@ -18,7 +18,7 @@
 import axios from 'axios';
 
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api/v1',             // Goes through Vite proxy -> same origin -> cookies work
+  baseURL: import.meta.env.VITE_API_URL || '/api/v1',             // VITE_API_URL from GitHub Secret at build time (2026-03-21 09:46)
   withCredentials: true,           // Send httpOnly cookies with every request
   headers: { 'Content-Type': 'application/json' },
   timeout: 30000,                  // 30s timeout — prevents hanging requests
