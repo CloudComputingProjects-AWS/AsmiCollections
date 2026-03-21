@@ -272,12 +272,16 @@ export const useInvoiceStore = create((set) => ({
 
   downloadInvoice: async (id) => {
     const res = await invoiceApi.download(id);
-    _downloadBlob(res.data, `invoice-${id}.pdf`);
+    const cd = res.headers['content-disposition'] || '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    _downloadBlob(res.data, m ? m[1] : `invoice-${id}.pdf`);
   },
 
   downloadCreditNote: async (id) => {
     const res = await invoiceApi.downloadCN(id);
-    _downloadBlob(res.data, `credit-note-${id}.pdf`);
+    const cd = res.headers['content-disposition'] || '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    _downloadBlob(res.data, m ? m[1] : `credit-note-${id}.pdf`);
   },
 }));
 
