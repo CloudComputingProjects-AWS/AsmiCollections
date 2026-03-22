@@ -21,7 +21,7 @@
 import { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import useAuthStore from './stores/authStore';
-import useIdleTimeout from './hooks/useIdleTimeout';
+import './hooks/idleTimeout';
 import ToastContainer from './components/ui/ToastContainer';
 import { SkipToContent } from './components/ui/Accessibility';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
@@ -94,7 +94,7 @@ export default function App() {
   useEffect(() => {
     init();
   }, []);
-  useIdleTimeout();
+
 
   return (
     <BrowserRouter>
