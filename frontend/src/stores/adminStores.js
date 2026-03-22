@@ -272,16 +272,26 @@ export const useInvoiceStore = create((set) => ({
 
   downloadInvoice: async (id) => {
     const res = await invoiceApi.download(id);
-    const cd = res.headers['content-disposition'] || '';
-    const m = cd.match(/filename="?([^"]+)"?/);
-    _downloadBlob(res.data, m ? m[1] : `invoice-${id}.pdf`);
+    const { download_url, filename } = res.data;
+    const a = document.createElement('a');
+    a.href = download_url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   },
 
   downloadCreditNote: async (id) => {
     const res = await invoiceApi.downloadCN(id);
-    const cd = res.headers['content-disposition'] || '';
-    const m = cd.match(/filename="?([^"]+)"?/);
-    _downloadBlob(res.data, m ? m[1] : `credit-note-${id}.pdf`);
+    const { download_url, filename } = res.data;
+    const a = document.createElement('a');
+    a.href = download_url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   },
 }));
 

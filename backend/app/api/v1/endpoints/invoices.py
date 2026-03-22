@@ -144,11 +144,10 @@ async def download_invoice(
 
     # If it's an S3/CDN URL, redirect
     if invoice.pdf_url.startswith("http"):
-        from fastapi.responses import RedirectResponse
         presigned = _generate_presigned_download_url(
             invoice.pdf_url, f"{invoice.invoice_number}.pdf"
         )
-        return RedirectResponse(url=presigned)
+        return {"download_url": presigned, "filename": f"{invoice.invoice_number}.pdf"}
 
     # If local file, serve it directly
     from pathlib import Path
@@ -231,11 +230,10 @@ async def admin_download_invoice(
         raise HTTPException(status_code=404, detail="PDF not generated")
 
     if invoice.pdf_url.startswith("http"):
-        from fastapi.responses import RedirectResponse
         presigned = _generate_presigned_download_url(
             invoice.pdf_url, f"{invoice.invoice_number}.pdf"
         )
-        return RedirectResponse(url=presigned)
+        return {"download_url": presigned, "filename": f"{invoice.invoice_number}.pdf"}
 
     from pathlib import Path
     pdf_path = Path(invoice.pdf_url)

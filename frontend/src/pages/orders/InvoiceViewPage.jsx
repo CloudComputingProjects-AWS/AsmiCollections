@@ -29,13 +29,15 @@ export default function InvoiceViewPage() {
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      const res = await api.get(`/orders/${orderId}/invoice`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const res = await api.get(`/orders/${orderId}/invoice`);
+      const { download_url, filename } = res.data;
       const a = document.createElement('a');
-      a.href = url;
-      a.download = `invoice-${invoice?.invoice_number || orderId}.pdf`;
+      a.href = download_url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
     } catch {
       alert('Failed to download invoice');
     }

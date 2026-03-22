@@ -80,19 +80,15 @@ const useOrderStore = create((set, get) => ({
 
   downloadInvoice: async (orderId) => {
     try {
-      const res = await apiClient.get(`/orders/${orderId}/invoice`, {
-        responseType: 'blob',
-      });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      const cd = res.headers["content-disposition"] || "";
-      const fnMatch = cd.match(/filename="?([^"]+)"?/);
-      link.setAttribute('download', fnMatch ? fnMatch[1] : `invoice-${orderId}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      const res = await apiClient.get(`/orders/${orderId}/invoice`);
+      const { download_url, filename } = res.data;
+      const a = document.createElement('a');
+      a.href = download_url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     } catch (err) {
       set({ error: 'Failed to download invoice' });
     }
