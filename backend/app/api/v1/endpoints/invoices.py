@@ -36,6 +36,49 @@ from app.schemas.invoice_schemas import (
 )
 from app.services.invoice_service import InvoiceService, InvoiceServiceError
 
+
+def _generate_presigned_download_url(s3_url: str, filename: str, expires_in: int = 300) -> str:
+    """
+    Generate a pre-signed S3 URL from a stored S3 URL.
+    
+    Args:
+        s3_url: Direct S3 URL like https://bucket.s3.amazonaws.com/key
+        filename: Desired download filename (e.g., INV-2026-00001-173206.pdf)
+        expires_in: URL validity in seconds (default 5 minutes)
+    
+    Returns:
+        Pre-signed URL with Content-Disposition baked in.
+        Falls back to original URL if pattern doesn't match.
+    """
+    import re as _re
+    import boto3
+    
+    # Match pattern: https://BUCKET.s3.amazonaws.com/KEY
+    # Also match: https://BUCKET.s3.REGION.amazonaws.com/KEY
+    match = _re.match(
+        r"https://([^/]+)\.s3(?:\.[a-z0-9-]+)?\.amazonaws\.com/(.+)",
+        s3_url,
+    )
+    if not match:
+        # Not a recognizable S3 URL — return as-is (CloudFront, etc.)
+        return s3_url
+    
+    bucket = match.group(1)
+    key = match.group(2)
+    
+    s3_client = boto3.client("s3")
+    presigned_url = s3_client.generate_presigned_url(
+        "get_object",
+        Params={
+            "Bucket": bucket,
+            "Key": key,
+            "ResponseContentDisposition": f'attachment; filename="{filename}"',
+            "ResponseContentType": "application/pdf",
+        },
+        ExpiresIn=expires_in,
+    )
+    return presigned_url
+
 router = APIRouter(tags=["Invoices"])
 
 
@@ -102,7 +145,10 @@ async def download_invoice(
     # If it's an S3/CDN URL, redirect
     if invoice.pdf_url.startswith("http"):
         from fastapi.responses import RedirectResponse
-        return RedirectResponse(url=invoice.pdf_url)
+        presigned = _generate_presigned_download_url(
+            invoice.pdf_url, f"{invoice.invoice_number}.pdf"
+        )
+        return RedirectResponse(url=presigned)
 
     # If local file, serve it directly
     from pathlib import Path
@@ -186,7 +232,10 @@ async def admin_download_invoice(
 
     if invoice.pdf_url.startswith("http"):
         from fastapi.responses import RedirectResponse
-        return RedirectResponse(url=invoice.pdf_url)
+        presigned = _generate_presigned_download_url(
+            invoice.pdf_url, f"{invoice.invoice_number}.pdf"
+        )
+        return RedirectResponse(url=presigned)
 
     from pathlib import Path
     pdf_path = Path(invoice.pdf_url)
