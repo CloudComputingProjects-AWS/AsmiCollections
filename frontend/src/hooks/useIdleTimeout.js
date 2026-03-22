@@ -3,13 +3,13 @@
  * Tracks: mousemove, mousedown, keydown, touchstart, scroll.
  * Only active when user is logged in (user !== null).
  *
- * Fix: Uses useRef for logout function reference instead of useCallback
- * dependency chain. This prevents the render loop where:
- *   logout ref changes → handleIdle recreates → resetTimer recreates →
- *   useEffect re-runs → timer resets → never reaches zero.
- *
- * Now useEffect depends only on [user], so the timer registers once
- * after login and resets only on actual user interaction events.
+ * Fix history:
+ * - Session 47: Added await before logout() to ensure cookies cleared before redirect.
+ * - Session 48 (attempt 1): Replaced useCallback chain with useRef for stable logout reference.
+ *   Result: Still broken - login/init set() calls produce new user object references,
+ *   causing useEffect([user]) to re-run and reset the timer on every store update.
+ * - Session 48 (attempt 2): Changed useEffect dependency from [user] to [user?.id].
+ *   Primitive comparison (number === number) prevents re-runs on identical user data.
  */
 import { useEffect, useRef } from 'react';
 import useAuthStore from '../stores/authStore';
@@ -51,5 +51,5 @@ export default function useIdleTimeout() {
       if (timerRef.current) clearTimeout(timerRef.current);
       EVENTS.forEach((e) => window.removeEventListener(e, resetTimer));
     };
-  }, [user]);
+  }, [user?.id]);
 }
