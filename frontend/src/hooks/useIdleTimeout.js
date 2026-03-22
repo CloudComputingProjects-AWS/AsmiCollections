@@ -19,9 +19,9 @@ export default function useIdleTimeout() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const timerRef = useRef(null);
-  const handleIdle = useCallback(() => {
+  const handleIdle = useCallback(async () => {
     if (!useAuthStore.getState().user) return;
-    logout();
+    await logout();
     window.dispatchEvent(new CustomEvent('auth:expired'));
     window.location.href = '/login?reason=idle';
   }, [logout]);
