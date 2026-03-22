@@ -10,9 +10,9 @@ SECURITY (Updated 05-Mar-2026 S20):
   - refresh_token cookie path is restricted so it is only sent on auth endpoints
 
 SameSite policy by ENVIRONMENT value:
-  development  — SameSite=Strict,  Secure=False  (local machine, same-origin HTTP)
-  aws_dev      — SameSite=None,    Secure=True   (cross-origin: S3 + API Gateway)
-  production   — SameSite=Strict,  Secure=True   (same-origin via CloudFront)
+  development  â€” SameSite=Strict,  Secure=False  (local machine, same-origin HTTP)
+  aws_dev      â€” SameSite=None,    Secure=True   (cross-origin: S3 + API Gateway)
+  production   â€” SameSite=Strict,  Secure=True   (same-origin via CloudFront)
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -64,7 +64,7 @@ def _get_cookie_security_params() -> tuple[str, bool]:
     aws_dev      -> ("none", True)
       S3 frontend (*.s3-website.amazonaws.com) and API Gateway
       (*.execute-api.amazonaws.com) are different domains. Browsers silently
-      drop SameSite=Strict cookies on cross-origin requests — every
+      drop SameSite=Strict cookies on cross-origin requests â€” every
       authenticated API call returns 401. SameSite=None; Secure=True is
       required. API Gateway always provides HTTPS so Secure=True is safe.
 
@@ -89,7 +89,7 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
     """Set both access_token and refresh_token as httpOnly cookies.
 
     - access_token: path="/" (sent on all API calls)
-    - refresh_token: path="/api/v1/auth" (sent only on auth endpoints — refresh, logout)
+    - refresh_token: path="/api/v1/auth" (sent only on auth endpoints â€” refresh, logout)
     """
     samesite, secure = _get_cookie_security_params()
 
@@ -114,10 +114,10 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
 
 
 def _clear_auth_cookies(response: Response) -> None:
-    """Clear both auth cookies."""
-    response.delete_cookie("access_token", path="/")
-    response.delete_cookie("refresh_token", path="/api/v1/auth")
-
+    """Clear both auth cookies with matching security params."""
+    samesite, secure = _get_cookie_security_params()
+    response.delete_cookie("access_token", path="/", secure=secure, samesite=samesite)
+    response.delete_cookie("refresh_token", path="/api/v1/auth", secure=secure, samesite=samesite)
 
 @router.post("/register", response_model=UserResponse, status_code=201)
 async def register(
@@ -153,7 +153,7 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ):
     """Authenticate user and return JWT tokens as httpOnly cookies.
-    No tokens in JSON body — both are httpOnly cookies."""
+    No tokens in JSON body â€” both are httpOnly cookies."""
     service = AuthService(db)
     try:
         user, access_token, refresh_token = await service.login(
@@ -172,7 +172,7 @@ async def login(
                 },
             )
 
-        # Set BOTH tokens as httpOnly cookies — nothing in JSON body
+        # Set BOTH tokens as httpOnly cookies â€” nothing in JSON body
         login_response = JSONResponse(
             status_code=200,
             content={
@@ -260,7 +260,7 @@ async def get_me(user: User = Depends(get_current_user)):
     return user
 
 
-# ─────────────────── Email Verification (OTP) ───────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Email Verification (OTP) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router.post("/verify-email", response_model=MessageResponse)
@@ -325,7 +325,7 @@ async def resend_verification(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-# ─────────────────── Forgot / Reset Password ───────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Forgot / Reset Password â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router.post("/forgot-password", response_model=MessageResponse)
