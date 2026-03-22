@@ -17,7 +17,7 @@
  */
 import useAuthStore from '../stores/authStore';
 
-var IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+var IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 var THROTTLE_MS = 60 * 1000;
 var EVENTS = ['mousedown', 'keydown', 'touchstart', 'pointerdown'];
 
