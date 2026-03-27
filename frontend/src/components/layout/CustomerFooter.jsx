@@ -68,7 +68,7 @@ export default function CustomerFooter() {
           </p>
           <div className="flex items-center gap-4 text-xs text-neutral-400">
             <span>Made in India</span>
-            <span>Â·</span>
+            <span>·</span>
             <span>Secure Payments</span>
           </div>
         </div>
