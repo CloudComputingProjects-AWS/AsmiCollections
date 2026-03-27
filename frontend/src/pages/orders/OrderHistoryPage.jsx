@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OrderHistoryPage — Order listing with status badges, timeline, invoice download.
  */
 import { useEffect, useState } from 'react';
@@ -58,7 +58,7 @@ export default function OrderHistoryPage() {
 
   if (loading && orders.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-50 pt-8">
+      <div className="bg-gray-50 pt-8 pb-12">
         <div className="max-w-4xl mx-auto px-4">
           <div className="animate-pulse space-y-4">
             {[1, 2, 3].map((i) => (
@@ -71,7 +71,7 @@ export default function OrderHistoryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="bg-gray-50 pb-12">
       {/* Header */}
       <div className="bg-white border-b">
         <div className="max-w-4xl mx-auto px-4 py-6">

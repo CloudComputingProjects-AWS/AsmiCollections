@@ -67,7 +67,7 @@ export default function CustomerFooter() {
             &copy; {new Date().getFullYear()} Ashmi. All rights reserved.
           </p>
           <div className="flex items-center gap-4 text-xs text-neutral-400">
-            <span>ðŸ‡®ðŸ‡³ Made in India</span>
+            <span>Made in India</span>
             <span>Â·</span>
             <span>Secure Payments</span>
           </div>

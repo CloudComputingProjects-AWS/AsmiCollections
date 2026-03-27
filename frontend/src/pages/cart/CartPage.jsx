@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CartPage -- Shopping cart with quantities, coupon, subtotal, stock check.
  * Field mapping: all item fields from backend CartItemResponse schema (cart_coupon.py)
  */
@@ -96,7 +96,7 @@ export default function CartPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 pt-8">
+      <div className="bg-gray-50 pt-8 pb-12">
         <div className="max-w-6xl mx-auto px-4">
           <div className="animate-pulse space-y-4">
             {[1, 2, 3].map((i) => (
@@ -109,7 +109,7 @@ export default function CartPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="bg-gray-50 pb-12">
       {/* Header */}
       <div className="bg-white border-b">
         <div className="max-w-6xl mx-auto px-4 py-6">

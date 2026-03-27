@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Invoice Viewer, User Manager, Audit Log, Reports â€” Phase F4 (Screens #28-31)
  */
 import { useEffect, useState } from 'react';
@@ -231,7 +231,7 @@ export function ReportsPage() {
           <div className="text-center py-10 text-gray-500">Loading...</div>
         ) : tab === 'sales' && salesData ? (
           <div>
-            <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
               <div className="text-center"><div className="text-2xl font-bold">{'\u20B9'}{(salesData.summary?.total_revenue || 0).toLocaleString()}</div><div className="text-xs text-gray-500">Revenue</div></div>
               <div className="text-center"><div className="text-2xl font-bold">{salesData.summary?.total_orders || 0}</div><div className="text-xs text-gray-500">Orders</div></div>
               <div className="text-center"><div className="text-2xl font-bold">{'\u20B9'}{(salesData.summary?.avg_order_value || 0).toLocaleString()}</div><div className="text-xs text-gray-500">Avg Order</div></div>
