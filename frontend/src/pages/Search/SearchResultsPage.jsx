@@ -1,19 +1,12 @@
-import { useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import useCatalogStore from '../../stores/catalogStore';
-import ProductListingPage from '../Products/ProductListingPage';
+﻿import { useSearchParams, Navigate } from 'react-router-dom';
 
 export default function SearchResultsPage() {
   const [searchParams] = useSearchParams();
-  const { setFilters } = useCatalogStore();
+  const q = searchParams.get('q');
 
-  useEffect(() => {
-    const q = searchParams.get('q');
-    if (q) {
-      setFilters({ search: q });
-    }
-  }, [searchParams, setFilters]);
+  if (q) {
+    return <Navigate to={`/shop?search=${encodeURIComponent(q)}`} replace />;
+  }
 
-  // Reuse the product listing page — it reads search from store filters
-  return <ProductListingPage />;
+  return <Navigate to="/shop" replace />;
 }
