@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Admin API Client — Phase F4
  * All admin endpoint calls organized by domain.
  */
@@ -117,7 +117,7 @@ export const reportApi = {
   sales: (params) => apiClient.get('/admin/reports/sales', { params }),
   gstSummary: (params) => apiClient.get('/admin/reports/gst-summary', { params }),
   couponPerformance: (params) => apiClient.get('/admin/reports/coupon-performance', { params }),
-  exportCsv: (type, params) => apiClient.get(`/admin/reports/${type}/export`, {
+  exportCsv: (type, params) => apiClient.get(`/admin/exports/${type}`, {
     params, responseType: 'blob',
   }),
 };
