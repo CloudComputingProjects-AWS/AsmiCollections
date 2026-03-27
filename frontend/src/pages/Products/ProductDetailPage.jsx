@@ -128,7 +128,7 @@ export default function ProductDetailPage() {
           >
             {currentImage ? (
               <img
-                src={currentImage.processed_url || currentImage.medium_url || currentImage.original_url}
+                src={currentImage.medium_url || currentImage.processed_url || currentImage.original_url}
                 alt={product.title}
                 className="w-full h-full object-cover"
               />
