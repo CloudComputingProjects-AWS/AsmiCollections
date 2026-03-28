@@ -271,3 +271,4 @@ async def update_contact_config(request: ContactConfigUpdateRequest, db: AsyncSe
         await db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
+
