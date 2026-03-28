@@ -261,3 +261,55 @@ class StoreSettingsService:
         svc = StoreSettingsService(db)
         val = await svc.get_setting_value("seller_state")
         return val if val else ""
+
+    # ---- Contact Config ----
+
+    async def get_contact_config(self) -> dict:
+        """Return store_email and store_whatsapp."""
+        store_email = await self.get_setting_value("store_email") or ""
+        store_whatsapp = await self.get_setting_value("store_whatsapp") or ""
+        return {
+            "store_email": store_email,
+            "store_whatsapp": store_whatsapp,
+        }
+
+    async def update_contact_config(
+        self, store_email: str, store_whatsapp: str, admin_id
+    ) -> dict:
+        """Update store_email and store_whatsapp. Audit-logged."""
+        from uuid import UUID as _UUID
+        admin_uuid = admin_id if isinstance(admin_id, _UUID) else _UUID(str(admin_id))
+        for key, new_val in [
+            ("store_email", store_email.strip()),
+            ("store_whatsapp", store_whatsapp.strip()),
+        ]:
+            result = await self.db.execute(
+                select(StoreSetting).where(StoreSetting.setting_key == key)
+            )
+            setting = result.scalar_one_or_none()
+            old_val = setting.setting_value if setting else None
+            if setting:
+                setting.setting_value = new_val
+                setting.updated_by = admin_uuid
+            else:
+                setting = StoreSetting(
+                    setting_key=key,
+                    setting_value=new_val,
+                    description=f"Contact config: {key}",
+                    updated_by=admin_uuid,
+                )
+                self.db.add(setting)
+            audit = StoreSettingsAudit(
+                setting_key=key,
+                old_value=old_val,
+                new_value=new_val,
+                changed_by=admin_uuid,
+            )
+            self.db.add(audit)
+        await self.db.flush()
+        return {
+            "store_email": store_email,
+            "store_whatsapp": store_whatsapp,
+            "message": "Contact configuration updated successfully.",
+        }
+

@@ -82,6 +82,11 @@ export default function AdminSettingsPage() {
   const [sellerLoading, setSellerLoading] = useState(false);
   const [sellerError, setSellerError] = useState('');
   const [sellerFetching, setSellerFetching] = useState(true);
+  // Contact config state
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactWhatsapp, setContactWhatsapp] = useState('');
+  const [contactLoading, setContactLoading] = useState(false);
+  const [contactFetching, setContactFetching] = useState(true);
 
   useEffect(() => {
     fetchUpiConfig();
@@ -123,6 +128,22 @@ export default function AdminSettingsPage() {
       }
     };
     fetchSeller();
+  }, []);
+
+  // Fetch contact config on mount
+  useEffect(() => {
+    const fetchContact = async () => {
+      try {
+        const res = await apiClient.get('/admin/settings/contact');
+        setContactEmail(res.data.store_email || '');
+        setContactWhatsapp(res.data.store_whatsapp || '');
+      } catch {
+        // silent fail
+      } finally {
+        setContactFetching(false);
+      }
+    };
+    fetchContact();
   }, []);
 
   // Check admin role
@@ -182,6 +203,35 @@ export default function AdminSettingsPage() {
     }
   };
 
+  const handleContactUpdate = async () => {
+    if (contactEmail) {
+      const emailRe = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+      if (!emailRe.test(contactEmail)) {
+        toast.error('Invalid email format');
+        return;
+      }
+    }
+    if (contactWhatsapp) {
+      const cleaned = contactWhatsapp.replace(/^\+/, '');
+      if (!/^\d{10,15}$/.test(cleaned)) {
+        toast.error('WhatsApp must be 10-15 digits (e.g. +91XXXXXXXXXX)');
+        return;
+      }
+    }
+    setContactLoading(true);
+    try {
+      await apiClient.put('/admin/settings/contact', {
+        store_email: contactEmail,
+        store_whatsapp: contactWhatsapp,
+      });
+      toast.success('Contact configuration saved');
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Failed to save contact configuration');
+    } finally {
+      setContactLoading(false);
+    }
+  };
+
   const handleShippingUpdate = async () => {
     setShippingError('');
     const fee = parseFloat(shippingFee);
@@ -216,11 +266,15 @@ export default function AdminSettingsPage() {
       setSellerError('Seller name is required');
       return;
     }
-    if (sellerGstin.trim() && sellerGstin.trim().length !== 15) {
+    if (!sellerGstin.trim()) {
+      setSellerError('Seller GSTIN is required');
+      return;
+    }
+    if (sellerGstin.trim().length !== 15) {
       setSellerError('GSTIN must be exactly 15 characters');
       return;
     }
-    if (sellerGstin.trim() && !GSTIN_REGEX.test(sellerGstin.trim())) {
+    if (!GSTIN_REGEX.test(sellerGstin.trim())) {
       setSellerError('Invalid GSTIN format. Expected: 22AAAAA0000A1Z5');
       return;
     }
@@ -573,6 +627,83 @@ export default function AdminSettingsPage() {
                   <p className="text-sm text-amber-700">
                     Only admin can modify shipping configuration.
                   </p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </section>
+
+      {/* Contact Configuration */}
+      <section
+        className="bg-white rounded-lg border border-gray-200 overflow-hidden"
+        aria-labelledby="contact-config-heading"
+      >
+        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+          <h2 id="contact-config-heading" className="text-lg font-semibold text-gray-900">
+            Contact Configuration
+          </h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Store email and WhatsApp number displayed to customers.
+          </p>
+        </div>
+        <div className="p-6 space-y-5">
+          {contactFetching ? (
+            <div className="flex items-center justify-center h-16">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" aria-label="Loading" />
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label htmlFor="contact-email" className="block text-sm font-medium text-gray-700 mb-1">
+                    Store Email
+                  </label>
+                  <input
+                    id="contact-email"
+                    type="email"
+                    maxLength={100}
+                    value={contactEmail}
+                    onChange={(e) => setContactEmail(e.target.value)}
+                    placeholder="e.g. support@ashmicollections.com"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    aria-label="Store email address"
+                    disabled={contactLoading || !isAdmin}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="contact-whatsapp" className="block text-sm font-medium text-gray-700 mb-1">
+                    WhatsApp Number
+                  </label>
+                  <input
+                    id="contact-whatsapp"
+                    type="tel"
+                    maxLength={15}
+                    value={contactWhatsapp}
+                    onChange={(e) => setContactWhatsapp(e.target.value)}
+                    placeholder="e.g. +91XXXXXXXXXX"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    aria-label="WhatsApp contact number"
+                    disabled={contactLoading || !isAdmin}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">10-15 digits, + prefix optional</p>
+                </div>
+              </div>
+              {isAdmin && (
+                <div>
+                  <button
+                    onClick={handleContactUpdate}
+                    disabled={contactLoading}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    aria-label="Save contact configuration"
+                  >
+                    {contactLoading ? 'Saving...' : 'Save Contact Config'}
+                  </button>
+                </div>
+              )}
+              {!isAdmin && (
+                <div className="rounded-md bg-amber-50 border border-amber-200 p-3">
+                  <p className="text-sm text-amber-700">Only admin can modify contact configuration.</p>
                 </div>
               )}
             </>

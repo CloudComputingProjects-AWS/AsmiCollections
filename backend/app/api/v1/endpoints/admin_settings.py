@@ -229,3 +229,45 @@ async def update_seller_config(data: SellerConfigUpdateRequest, db: AsyncSession
         return SellerConfigUpdateResponse(**result)
     except SettingsServiceError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+
+
+# ---- Contact Config ----
+
+class ContactConfigResponse(BaseModel):
+    store_email: str
+    store_whatsapp: str
+
+
+class ContactConfigUpdateRequest(BaseModel):
+    store_email: str = Field("", max_length=100)
+    store_whatsapp: str = Field("", max_length=15)
+
+
+class ContactConfigUpdateResponse(BaseModel):
+    message: str
+    store_email: str
+    store_whatsapp: str
+
+
+@router.get("/settings/contact", response_model=ContactConfigResponse, summary="Get store contact configuration")
+async def get_contact_config(db: AsyncSession = Depends(get_db), user: User = Depends(admin_only)):
+    service = StoreSettingsService(db)
+    data = await service.get_contact_config()
+    return ContactConfigResponse(**data)
+
+
+@router.put("/settings/contact", response_model=ContactConfigUpdateResponse, summary="Update store contact configuration")
+async def update_contact_config(request: ContactConfigUpdateRequest, db: AsyncSession = Depends(get_db), user: User = Depends(admin_only)):
+    service = StoreSettingsService(db)
+    try:
+        result = await service.update_contact_config(
+            store_email=request.store_email,
+            store_whatsapp=request.store_whatsapp,
+            admin_id=user.id,
+        )
+        await db.commit()
+        return ContactConfigUpdateResponse(**result)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
