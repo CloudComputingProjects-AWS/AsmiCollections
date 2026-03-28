@@ -216,15 +216,11 @@ export default function AdminSettingsPage() {
       setSellerError('Seller name is required');
       return;
     }
-    if (!sellerGstin.trim()) {
-      setSellerError('Seller GSTIN is required');
-      return;
-    }
-    if (sellerGstin.trim().length !== 15) {
+    if (sellerGstin.trim() && sellerGstin.trim().length !== 15) {
       setSellerError('GSTIN must be exactly 15 characters');
       return;
     }
-    if (!GSTIN_REGEX.test(sellerGstin.trim())) {
+    if (sellerGstin.trim() && !GSTIN_REGEX.test(sellerGstin.trim())) {
       setSellerError('Invalid GSTIN format. Expected: 22AAAAA0000A1Z5');
       return;
     }
