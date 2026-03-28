@@ -202,7 +202,7 @@ class SellerConfigResponse(BaseModel):
 
 class SellerConfigUpdateRequest(BaseModel):
     seller_name: str = Field(..., min_length=1, max_length=200)
-    seller_gstin: str = Field(..., min_length=15, max_length=15)
+    seller_gstin: str = Field("", max_length=15,description="Optional GSTIN - if provided must be exactly 15 characters")
     seller_address: str = Field(..., min_length=1, max_length=500)
     seller_state: str = Field(..., min_length=1, max_length=100)
     seller_state_code: str = Field(..., min_length=1, max_length=5)
