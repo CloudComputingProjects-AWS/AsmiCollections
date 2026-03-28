@@ -20,7 +20,7 @@ from app.services.store_settings_service import (
 
 router = APIRouter(
     prefix="/admin/settings",
-    tags=["Admin Ã¢â‚¬â€ Store Settings"],
+    tags=["Admin ‚Store Settings"],
 )
 
 admin_only = require_role("admin")
@@ -249,14 +249,14 @@ class ContactConfigUpdateResponse(BaseModel):
     store_whatsapp: str
 
 
-@router.get("/settings/contact", response_model=ContactConfigResponse, summary="Get store contact configuration")
+@router.get("/contact", response_model=ContactConfigResponse, summary="Get store contact configuration")
 async def get_contact_config(db: AsyncSession = Depends(get_db), user: User = Depends(admin_only)):
     service = StoreSettingsService(db)
     data = await service.get_contact_config()
     return ContactConfigResponse(**data)
 
 
-@router.put("/settings/contact", response_model=ContactConfigUpdateResponse, summary="Update store contact configuration")
+@router.put("/contact", response_model=ContactConfigUpdateResponse, summary="Update store contact configuration")
 async def update_contact_config(request: ContactConfigUpdateRequest, db: AsyncSession = Depends(get_db), user: User = Depends(admin_only)):
     service = StoreSettingsService(db)
     try:
