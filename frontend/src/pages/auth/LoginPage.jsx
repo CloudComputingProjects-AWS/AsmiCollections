@@ -63,7 +63,10 @@ export default function LoginPage() {
       const params = new URLSearchParams(location.search);
       const nextRaw = params.get('next') ?? '';
       const next = nextRaw.startsWith('/') && !nextRaw.startsWith('//') ? nextRaw : null;
-      navigate(next ?? ROLE_DEFAULT_ROUTE[profile?.role] ?? '/', { replace: true });
+      const dest = (profile?.role === 'admin' && !profile?.totp_enabled)
+        ? '/profile?tab=2fa'
+        : (next ?? ROLE_DEFAULT_ROUTE[profile?.role] ?? '/');
+      navigate(dest, { replace: true });
     } catch (err) {
       const msg = err?.response?.data?.detail;
       setErrorMsg(typeof msg === 'string' ? msg : 'Invalid user id and password');

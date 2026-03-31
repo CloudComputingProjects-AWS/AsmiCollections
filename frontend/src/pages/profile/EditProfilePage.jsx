@@ -3,6 +3,7 @@
  * Name, email, phone, change password
  */
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { User, Mail, Phone, Lock, Save, ArrowLeft, Shield, QrCode, CheckCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import useAuthStore from '../../stores/authStore';
@@ -10,7 +11,8 @@ import api from '../../api/apiClient';
 
 export default function EditProfilePage() {
   const { user, init } = useAuthStore();
-  const [tab, setTab] = useState('profile'); // 'profile' | 'password'
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState(searchParams.get('tab') || 'profile'); // 'profile' | 'password' | '2fa'
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState({ type: '', text: '' });
 
