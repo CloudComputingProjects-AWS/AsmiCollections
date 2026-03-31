@@ -42,7 +42,9 @@ export default function LoginPage() {
   // Already logged in â†’ redirect
   useEffect(() => {
     if (user?.role) {
-      const dest = ROLE_DEFAULT_ROUTE[user.role] ?? '/';
+      const dest = (user.role === 'admin' && !user.totp_enabled)
+        ? '/profile?tab=2fa'
+        : (ROLE_DEFAULT_ROUTE[user.role] ?? '/');
       navigate(dest, { replace: true });
     }
   }, [user]);
