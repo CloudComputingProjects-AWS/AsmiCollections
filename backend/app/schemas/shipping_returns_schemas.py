@@ -65,7 +65,7 @@ class ReturnRequestCreate(BaseModel):
     order_item_id: UUID
     reason: str = Field(..., max_length=50)
     reason_detail: str | None = Field(None, max_length=1000)
-    return_type: str = Field(..., pattern="^(return|exchange)$")
+    return_type: str = Field(..., pattern="^(exchange)$")
     quantity: int = Field(..., ge=1)
 
 
