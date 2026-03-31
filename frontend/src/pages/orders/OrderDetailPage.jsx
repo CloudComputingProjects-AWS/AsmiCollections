@@ -52,7 +52,7 @@ export default function OrderDetailPage() {
   const [showCancel, setShowCancel] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [showReturn, setShowReturn] = useState(null); // item id
-  const [returnData, setReturnData] = useState({ reason: '', reason_detail: '', return_type: 'refund', quantity: 1 });
+  const [returnData, setReturnData] = useState({ reason: '', reason_detail: '', return_type: 'exchange', quantity: 1 });
   const [showTimeline, setShowTimeline] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
