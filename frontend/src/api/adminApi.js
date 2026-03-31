@@ -71,8 +71,8 @@ export const orderApi = {
 export const returnApi = {
   list: (params) => apiClient.get('/admin/returns', { params }),       
   get: (id) => apiClient.get(`/admin/returns/${id}`),
-  approve: (id, data) => apiClient.post(`/admin/returns/${id}/approve`, data),
-  reject: (id, data) => apiClient.post(`/admin/returns/${id}/reject`, data),
+  approve: (id, data) => apiClient.post(`/admin/returns/${id}/action`, { action: 'approve', ...data }),
+  reject: (id, data) => apiClient.post(`/admin/returns/${id}/action`, { action: 'reject', ...data }),
   receive: (id) => apiClient.post(`/admin/returns/${id}/receive`),     
 };
 
