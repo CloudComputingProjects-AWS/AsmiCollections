@@ -78,7 +78,7 @@ class UserResponse(BaseModel):
     role: str
     email_verified: bool
     is_active: bool
-    totp_enabled: bool = False
+    totp_enabled: bool | None = False
     created_at: datetime
 
     class Config:
