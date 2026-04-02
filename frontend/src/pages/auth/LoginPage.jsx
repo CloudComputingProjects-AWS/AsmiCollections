@@ -7,7 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import useAuthStore, { ROLE_DEFAULT_ROUTE } from '../../stores/authStore';
+import useAuthStore, { ADMIN_ROLES, ROLE_DEFAULT_ROUTE } from '../../stores/authStore';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -42,12 +42,12 @@ export default function LoginPage() {
   // Already logged in â†’ redirect
   useEffect(() => {
     if (user?.role) {
-      const dest = (user.role === 'admin' && !user.totp_enabled)
+      const dest = (ADMIN_ROLES.includes(user.role) && !user.totp_enabled)
         ? '/profile?tab=2fa'
         : (ROLE_DEFAULT_ROUTE[user.role] ?? '/');
       navigate(dest, { replace: true });
     }
-  }, [user]);
+  }, [navigate, user]);
 
   const handleChange = (e) =>
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -62,10 +62,26 @@ export default function LoginPage() {
       const profile = await loginFn(form.email.trim(), form.password);
       setErrorMsg('');
 
+      if (profile?.requires_2fa && profile?.user_id) {
+        const params = new URLSearchParams(location.search);
+        const nextRaw = params.get('next') ?? '';
+        const next = nextRaw.startsWith('/') && !nextRaw.startsWith('//') ? nextRaw : null;
+        setSubmitting(false);
+        navigate('/login/2fa', {
+          replace: true,
+          state: {
+            userId: profile.user_id,
+            email: form.email.trim(),
+            next,
+          },
+        });
+        return;
+      }
+
       const params = new URLSearchParams(location.search);
       const nextRaw = params.get('next') ?? '';
       const next = nextRaw.startsWith('/') && !nextRaw.startsWith('//') ? nextRaw : null;
-      const dest = (profile?.role === 'admin' && !profile?.totp_enabled)
+      const dest = (ADMIN_ROLES.includes(profile?.role) && !profile?.totp_enabled)
         ? '/profile?tab=2fa'
         : (next ?? ROLE_DEFAULT_ROUTE[profile?.role] ?? '/');
       navigate(dest, { replace: true });

@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { User, Mail, Phone, Lock, Save, ArrowLeft, Shield, QrCode, CheckCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import useAuthStore from '../../stores/authStore';
+import useAuthStore, { ADMIN_ROLES, ROLE_DEFAULT_ROUTE } from '../../stores/authStore';
 import api from '../../api/apiClient';
 
 export default function EditProfilePage() {
@@ -132,7 +132,7 @@ export default function EditProfilePage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-10">
       {/* Back link */}
-      <Link to={['admin', 'product_manager', 'order_manager', 'finance_manager'].includes(user?.role) ? '/admin/dashboard' : '/dashboard'} className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-black mb-6 transition">
+      <Link to={ADMIN_ROLES.includes(user?.role) ? (ROLE_DEFAULT_ROUTE[user?.role] ?? '/admin/dashboard') : '/dashboard'} className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-black mb-6 transition">
         <ArrowLeft size={16} /> Back to Dashboard
       </Link>
 
@@ -153,7 +153,7 @@ export default function EditProfilePage() {
         {[
           { id: 'profile', label: 'Personal Info', icon: User },
           { id: 'password', label: 'Change Password', icon: Lock },
-          ...(user?.role === 'admin' ? [{ id: '2fa', label: 'Two-Factor Auth', icon: Shield }] : []),
+          ...(ADMIN_ROLES.includes(user?.role) ? [{ id: '2fa', label: 'Two-Factor Auth', icon: Shield }] : []),
         ].map((t) => (
           <button
             key={t.id}
@@ -295,7 +295,7 @@ export default function EditProfilePage() {
         </form>
       )}
       {/* 2FA Tab — admin only */}
-      {tab === '2fa' && user?.role === 'admin' && (
+      {tab === '2fa' && ADMIN_ROLES.includes(user?.role) && (
         <div className="space-y-6">
           {/* Status banner */}
           <div className={`flex items-center gap-3 p-4 rounded-lg border ${twoFA.enabled ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>

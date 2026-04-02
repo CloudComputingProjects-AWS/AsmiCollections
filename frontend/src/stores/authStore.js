@@ -13,6 +13,8 @@
 import { create } from 'zustand';
 import apiClient from '../api/apiClient';
 
+export const ADMIN_ROLES = ['admin', 'product_manager', 'order_manager', 'finance_manager'];
+
 const useAuthStore = create((set, get) => ({
   user: null,
   loading: true,       // true until initial session check completes
@@ -75,6 +77,23 @@ const useAuthStore = create((set, get) => ({
       // Both tokens are now in httpOnly cookies â€” nothing to store in JS
 
       // Fetch full user profile (cookies are now set, browser sends them)
+      const meRes = await apiClient.get('/auth/me');
+      set({ user: meRes.data, loading: false, error: null });
+      return meRes.data;
+    } catch (err) {
+      set({ loading: false });
+      throw err;
+    }
+  },
+
+  completeTwoFactorLogin: async (userId, totpCode) => {
+    set({ loading: true, error: null });
+    try {
+      await apiClient.post('/auth/2fa/validate', {
+        user_id: userId,
+        totp_code: totpCode,
+      });
+
       const meRes = await apiClient.get('/auth/me');
       set({ user: meRes.data, loading: false, error: null });
       return meRes.data;

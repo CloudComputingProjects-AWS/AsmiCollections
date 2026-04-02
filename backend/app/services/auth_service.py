@@ -21,6 +21,7 @@ from app.models.models import EmailVerification, RefreshToken, User, UserConsent
 from app.schemas.auth import UserRegisterRequest
 
 settings = get_settings()
+ADMIN_2FA_ROLES = {"admin", "product_manager", "order_manager", "finance_manager"}
 
 
 class AuthServiceError(Exception):
@@ -161,7 +162,13 @@ class AuthService:
             raise AuthServiceError("Invalid email or password", 401)
 
         # Check if 2FA is required (admin with TOTP enabled)
-        if getattr(user, "totp_enabled", False) and user.totp_secret:
+        requires_admin_totp = (
+            user.role in ADMIN_2FA_ROLES
+            and getattr(user, "totp_enabled", False)
+            and user.totp_secret is not None
+        )
+
+        if requires_admin_totp:
             # Password verified, but 2FA needed — return no tokens
             return user, None, None
 

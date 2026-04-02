@@ -39,7 +39,7 @@ const processQueue = (error) => {
 };
 
 // Routes that should NOT trigger the 401 refresh/redirect logic
-const AUTH_ROUTES = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/me'];
+const AUTH_ROUTES = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/me', '/auth/2fa/validate'];
 
 // — Error normalizer — standardizes error shape for all components
 function normalizeError(error) {

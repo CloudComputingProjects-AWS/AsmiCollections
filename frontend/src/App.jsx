@@ -37,6 +37,7 @@ import RegisterPage       from './pages/auth/RegisterPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 import VerifyOTPPage from './pages/auth/VerifyOTPPage';
+import VerifyTOTPPage from './pages/auth/VerifyTOTPPage';
 
 // -- Public / Catalog Pages ------------------------------------------------
 import LandingPage        from './pages/Landing/LandingPage';
@@ -110,6 +111,7 @@ export default function App() {
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/verify-otp" element={<VerifyOTPPage />} />
+              <Route path="/login/2fa" element={<VerifyTOTPPage />} />
             </Route>
 
             {/* Redirect old /admin/login to /login */}

@@ -12,7 +12,7 @@ SECURITY (Updated 05-Mar-2026 S20):
   - /2fa/validate sets tokens as httpOnly cookies (not JSON body)
   - SameSite policy is environment-aware — identical logic to auth.py:
       development  -> SameSite=Strict,  Secure=False  (local machine)
-      aws_dev      -> SameSite=None,    Secure=True   (cross-origin S3 + API GW)
+      aws_dev      -> SameSite=Strict,  Secure=True   (CloudFront dual-origin, same-domain)
       production   -> SameSite=Strict,  Secure=True   (CloudFront same-domain)
 """
 
@@ -75,18 +75,17 @@ def _get_cookie_security_params() -> tuple[str, bool]:
     """
     Return (samesite, secure) based on ENVIRONMENT setting.
 
-    development  -> ("strict", False)  — local machine, same-origin HTTP
-    aws_dev      -> ("none",   True)   — cross-origin: S3 + API Gateway
-    production   -> ("strict", True)   — CloudFront same-domain, HTTPS
+    development  -> ("strict", False)
+    aws_dev      -> ("strict", True)
+    production   -> ("strict", True)
     """
     env = settings.ENVIRONMENT.lower()
     if env == "development":
         return "strict", False
     elif env == "aws_dev":
-        return "none", True
+        return "strict", True
     else:
         return "strict", True
-
 
 # ────────────────────────────────────────────────────────────────
 # ENDPOINTS
