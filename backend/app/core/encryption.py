@@ -72,7 +72,7 @@ def encrypt_pii_if_needed(value: str | None) -> str | None:
     return encrypt_pii(value)
 
 
-def decrypt_pii(encrypted: str | None) -> str | None:
+def cle(encrypted: str | None) -> str | None:
     if encrypted is None or encrypted == "":
         return encrypted
     if not is_encrypted_pii(encrypted):
