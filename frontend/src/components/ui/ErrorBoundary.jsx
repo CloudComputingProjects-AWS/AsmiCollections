@@ -18,8 +18,8 @@ export class ErrorBoundary extends Component {
 
   componentDidCatch(error, errorInfo) {
     this.setState({ errorInfo });
-    // Log to external service (Sentry, etc.)
     console.error('[ErrorBoundary]', error, errorInfo);
+
     if (typeof this.props.onError === 'function') {
       this.props.onError(error, errorInfo);
     }
