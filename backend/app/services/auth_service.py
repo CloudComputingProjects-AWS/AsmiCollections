@@ -3,7 +3,7 @@ Authentication service — handles registration, login, token management.
 Business logic layer (Controller → Service → Repository pattern).
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select
@@ -17,7 +17,7 @@ from app.core.security import (
     hash_token,
     verify_password,
 )
-from app.models.models import EmailVerification, RefreshToken, User, UserConsent
+from app.models.models import RefreshToken, User, UserConsent
 from app.schemas.auth import UserRegisterRequest
 
 settings = get_settings()
@@ -32,51 +32,52 @@ class AuthServiceError(Exception):
 
 
 class AuthService:
-
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    # ──────────────── Registration ────────────────
+    @staticmethod
+    def _normalize_phone(phone: str | None, country_code: str | None) -> str | None:
+        if not phone:
+            return None
+
+        phone_digits = phone.strip()
+        if not phone_digits:
+            return None
+
+        cc = (country_code or "+91").strip()
+        if phone_digits.startswith("+"):
+            return phone_digits
+        return f"{cc}{phone_digits}"
+
+    async def _customer_phone_exists(self, normalized_phone: str) -> bool:
+        # Equality queries won't work once phone is encrypted with random nonces.
+        result = await self.db.execute(
+            select(User.phone).where(
+                User.role == "customer",
+                User.deleted_at.is_(None),
+                User.phone.is_not(None),
+            )
+        )
+        return any(phone == normalized_phone for phone in result.scalars().all())
 
     async def register(
         self, data: UserRegisterRequest, ip_address: str, user_agent: str
     ) -> User:
         """Register a new user with consent tracking."""
-        # Validate required consents
         if not data.terms_accepted or not data.privacy_accepted:
             raise AuthServiceError("Terms of Service and Privacy Policy must be accepted")
 
-        # Normalize phone: concatenate country_code + phone digits
-        normalized_phone = None
-        if data.phone:
-            phone_digits = data.phone.strip()
-            if phone_digits:
-                country_code = (data.country_code or "+91").strip()
-                # Remove any leading + from phone digits if user accidentally included it
-                if phone_digits.startswith("+"):
-                    normalized_phone = phone_digits
-                else:
-                    normalized_phone = country_code + phone_digits
+        normalized_phone = self._normalize_phone(data.phone, data.country_code)
 
-        # Check duplicate email
         existing_email = await self.db.execute(
             select(User).where(User.email == data.email.lower())
         )
         email_taken = existing_email.scalar_one_or_none() is not None
 
-        # Check duplicate phone (customer accounts only, skip if phone not provided)
         phone_taken = False
         if normalized_phone:
-            existing_phone = await self.db.execute(
-                select(User).where(
-                    User.phone == normalized_phone,
-                    User.role == "customer",
-                    User.deleted_at.is_(None),
-                )
-            )
-            phone_taken = existing_phone.scalar_one_or_none() is not None
+            phone_taken = await self._customer_phone_exists(normalized_phone)
 
-        # Raise combined error if any duplicates found
         if email_taken and phone_taken:
             raise AuthServiceError("Email and Phone number already registered", 409)
         if email_taken:
@@ -84,7 +85,6 @@ class AuthService:
         if phone_taken:
             raise AuthServiceError("Phone number already registered", 409)
 
-        # Create user (email_verified defaults to False -- OTP verification required)
         user = User(
             email=data.email.lower(),
             password_hash=hash_password(data.password),
@@ -95,9 +95,8 @@ class AuthService:
             role="customer",
         )
         self.db.add(user)
-        await self.db.flush()  # get user.id
+        await self.db.flush()
 
-        # Record consents (V2.5 — DPDP/GDPR compliance)
         consents = [
             UserConsent(
                 user_id=user.id,
@@ -136,12 +135,7 @@ class AuthService:
         ]
         self.db.add_all(consents)
 
-        # OTP verification email is sent by the endpoint layer (auth.py)
-        # email_verified remains False until OTP is verified
-
         return user
-
-    # ──────────────── Login (with 2FA support) ────────────────
 
     async def login(self, email: str, password: str) -> tuple[User, str | None, str | None]:
         """
@@ -161,7 +155,6 @@ class AuthService:
         if not user or not verify_password(password, user.password_hash):
             raise AuthServiceError("Invalid email or password", 401)
 
-        # Check if 2FA is required (admin with TOTP enabled)
         requires_admin_totp = (
             user.role in ADMIN_2FA_ROLES
             and getattr(user, "totp_enabled", False)
@@ -169,14 +162,11 @@ class AuthService:
         )
 
         if requires_admin_totp:
-            # Password verified, but 2FA needed — return no tokens
             return user, None, None
 
-        # No 2FA — issue tokens directly
         access_token = create_access_token(str(user.id), user.role)
         refresh_token_str, family_id, expires_at = create_refresh_token(str(user.id))
 
-        # Store refresh token hash
         rt = RefreshToken(
             user_id=user.id,
             token_hash=hash_token(refresh_token_str),
@@ -186,8 +176,6 @@ class AuthService:
         self.db.add(rt)
 
         return user, access_token, refresh_token_str
-
-    # ──────────────── Token Rotation ────────────────
 
     async def rotate_refresh_token(self, old_token: str) -> tuple[str, str]:
         """
@@ -205,7 +193,6 @@ class AuthService:
         family_id = payload["family"]
         token_hash = hash_token(old_token)
 
-        # Find stored token
         result = await self.db.execute(
             select(RefreshToken).where(
                 RefreshToken.token_hash == token_hash,
@@ -215,22 +202,18 @@ class AuthService:
         stored = result.scalar_one_or_none()
 
         if not stored:
-            # Token not found — possible theft. Revoke entire family.
             await self._revoke_token_family(family_id)
             raise AuthServiceError("Refresh token reuse detected. All sessions revoked.", 401)
 
         if stored.revoked_at is not None:
-            # Already revoked — theft detected. Revoke entire family.
             await self._revoke_token_family(family_id)
             raise AuthServiceError("Refresh token reuse detected. All sessions revoked.", 401)
 
         if stored.expires_at < datetime.now(timezone.utc):
             raise AuthServiceError("Refresh token expired", 401)
 
-        # Revoke old token
         stored.revoked_at = datetime.now(timezone.utc)
 
-        # Get user for role info
         user_result = await self.db.execute(
             select(User).where(User.id == user_id, User.is_active.is_(True))
         )
@@ -238,7 +221,6 @@ class AuthService:
         if not user:
             raise AuthServiceError("User not found", 401)
 
-        # Issue new pair (same family)
         new_access = create_access_token(str(user.id), user.role)
         new_refresh_str, _, new_expires = create_refresh_token(str(user.id), family_id)
 
@@ -252,8 +234,6 @@ class AuthService:
 
         return new_access, new_refresh_str
 
-    # ──────────────── Logout ────────────────
-
     async def logout(self, user_id: UUID) -> None:
         """Revoke all refresh tokens for user."""
         result = await self.db.execute(
@@ -266,8 +246,6 @@ class AuthService:
         now = datetime.now(timezone.utc)
         for token in tokens:
             token.revoked_at = now
-
-    # ──────────────── Internal ────────────────
 
     async def _revoke_token_family(self, family_id: str) -> None:
         """Revoke all tokens in a family (theft detection)."""

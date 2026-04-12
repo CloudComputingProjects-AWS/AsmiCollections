@@ -5,6 +5,7 @@ Maps 1:1 to the blueprint database design.
 
 import uuid
 from datetime import datetime, timezone
+from app.core.encryption import EncryptedText
 
 from sqlalchemy import (
     Boolean,
@@ -50,7 +51,7 @@ class User(Base, SoftDeleteMixin):
     password_hash = Column(String(255), nullable=False)
     first_name = Column(String(100))
     last_name = Column(String(100))
-    phone = Column(String(20))
+    phone = Column(EncryptedText())
     country_code = Column(String(5))
     role = Column(String(20), default="customer", nullable=False)
     is_active = Column(Boolean, default=True)
@@ -76,9 +77,9 @@ class UserAddress(Base, SoftDeleteMixin):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     label = Column(String(20), nullable=False)
     full_name = Column(String(200))
-    phone = Column(String(20))
-    address_line_1 = Column(String(500), nullable=False)
-    address_line_2 = Column(String(500))
+    phone = Column(EncryptedText())
+    address_line_1 = Column(EncryptedText(), nullable=False)
+    address_line_2 = Column(EncryptedText())
     city = Column(String(100), nullable=False)
     state = Column(String(100), nullable=False)
     postal_code = Column(String(20), nullable=False)
