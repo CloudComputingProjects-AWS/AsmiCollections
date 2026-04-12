@@ -67,6 +67,8 @@ class Settings(BaseSettings):
 
     # ────────────────── Encryption (PII at rest) ──────────────────
     PII_ENCRYPTION_KEY: str = ""  # AES-256 key, base64 encoded
+    
+
 
     # ────────────────── Business Config ──────────────────
     # SELLER_* values are first-boot defaults only.

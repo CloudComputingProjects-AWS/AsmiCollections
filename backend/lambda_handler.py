@@ -31,6 +31,7 @@ _mangum_handler = None
 _app = None
 
 
+
 def _ensure_app():
     """
     Import app.main and create Mangum handler on first call.
@@ -62,6 +63,7 @@ def handler(event: dict, context) -> dict:
     # EventBridge scheduled task detection -- does NOT need full app
     if "task" in event:
         return _run_background_task(event["task"])
+
 
     # HTTP request -- ensure app is loaded, then delegate to Mangum
     try:

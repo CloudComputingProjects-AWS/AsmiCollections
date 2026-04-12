@@ -23,7 +23,6 @@ from app.jobs.reservation_expiry import run_periodic as reservation_cleanup_job
 
 settings = get_settings()
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""

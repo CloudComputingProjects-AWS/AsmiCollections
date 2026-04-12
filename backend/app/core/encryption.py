@@ -17,6 +17,7 @@ import binascii
 import os
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from sqlalchemy.types import TEXT, TypeDecorator
 
 from app.core.config import get_settings
 
@@ -24,6 +25,8 @@ settings = get_settings()
 
 # Nonce size for AES-GCM
 _NONCE_SIZE = 12  # 96 bits recommended for GCM
+_PII_PREFIX = "enc:v1:"
+_DEV_FALLBACK_KEY = b"0123456789abcdef0123456789abcdef"
 
 
 def _get_key() -> bytes:
@@ -32,40 +35,71 @@ def _get_key() -> bytes:
     if not key_b64:
         if settings.ENVIRONMENT == "development":
             # Deterministic key for local dev only — NOT for production
-            return b"dev-only-32-byte-key-do-not-use!"
+            return _DEV_FALLBACK_KEY
         raise ValueError(
             "PII_ENCRYPTION_KEY is not set. Cannot encrypt PII data in non-development environment."
         )
-    return base64.b64decode(key_b64)
+    try:
+        key = base64.b64decode(key_b64)
+    except binascii.Error as exc:
+        raise ValueError("PII_ENCRYPTION_KEY must be valid base64.") from exc
+
+    if len(key) != 32:
+        raise ValueError("PII_ENCRYPTION_KEY must decode to exactly 32 bytes.")
+
+    return key
+
+
+def is_encrypted_pii(value: str | None) -> bool:
+    return isinstance(value, str) and value.startswith(_PII_PREFIX)
 
 
 def encrypt_pii(plaintext: str | None) -> str | None:
     """Encrypt a PII string. Returns base64(nonce + ciphertext + tag)."""
     if plaintext is None or plaintext == "":
         return plaintext
-    key = _get_key()
-    aesgcm = AESGCM(key)
+    if is_encrypted_pii(plaintext):
+        return plaintext
+
+    aesgcm = AESGCM(_get_key())
     nonce = os.urandom(_NONCE_SIZE)
     ciphertext = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), None)
-    # Store as: base64(nonce || ciphertext_with_tag)
-    return base64.b64encode(nonce + ciphertext).decode("ascii")
+    payload = base64.b64encode(nonce + ciphertext).decode("ascii")
+    return f"{_PII_PREFIX}{payload}"
+
+
+def encrypt_pii_if_needed(value: str | None) -> str | None:
+    return encrypt_pii(value)
 
 
 def decrypt_pii(encrypted: str | None) -> str | None:
     """Decrypt a PII string from base64(nonce + ciphertext + tag)."""
     if encrypted is None or encrypted == "":
         return encrypted
+    if not is_encrypted_pii(encrypted):
+        return encrypted
     try:
-        key = _get_key()
-        aesgcm = AESGCM(key)
-        raw = base64.b64decode(encrypted)
+        aesgcm = AESGCM(_get_key())
+        raw = base64.b64decode(encrypted[len(_PII_PREFIX):])
         nonce = raw[:_NONCE_SIZE]
         ciphertext = raw[_NONCE_SIZE:]
         plaintext = aesgcm.decrypt(nonce, ciphertext, None)
         return plaintext.decode("utf-8")
-    except (InvalidTag, ValueError, binascii.Error):
+    except (InvalidTag, ValueError, binascii.Error) as exc:
+        raise ValueError("Encrypted PII value could not be decrypted.") from exc
         # Legacy plaintext or corrupted data — return as-is
-        return encrypted
+
+class EncryptedText(TypeDecorator):
+    """SQLAlchemy field type that encrypts on write and decrypts on read."""
+
+    impl = TEXT
+    cache_ok = True
+
+    def process_bind_param(self, value: str | None, dialect) -> str | None:
+        return encrypt_pii_if_needed(value)
+
+    def process_result_value(self, value: str | None, dialect) -> str | None:
+        return decrypt_pii(value)
 
 
 def generate_encryption_key() -> str:
