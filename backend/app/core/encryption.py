@@ -2,22 +2,19 @@
 PII Encryption at Rest — AES-256-GCM
 Encrypts: phone, address_line_1, address_line_2, address phone
 Decrypts on SELECT, encrypts on INSERT/UPDATE.
-PII encryption helpers used by the ORM layer.
+
 Usage:
-   from app.core.encryption import encrypt_pii, decrypt_pii
+    from app.core.encryption import encrypt_pii, decrypt_pii
     encrypted = encrypt_pii("9876543210")
     plain = decrypt_pii(encrypted)
 
 Key stored in AWS Secrets Manager (env: PII_ENCRYPTION_KEY).
 Key must be 32 bytes, base64-encoded.
-Protected values are stored as:
-    enc:v1:<base64(nonce || ciphertext || tag)>
 """
 
 import base64
 import binascii
 import os
-
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy.types import TEXT, TypeDecorator
@@ -33,6 +30,7 @@ _DEV_FALLBACK_KEY = b"0123456789abcdef0123456789abcdef"
 
 
 def _get_key() -> bytes:
+    """Get AES-256 key from config. Returns 32 bytes."""
     key_b64 = settings.PII_ENCRYPTION_KEY
     if not key_b64:
         if settings.ENVIRONMENT == "development":
@@ -57,6 +55,7 @@ def is_encrypted_pii(value: str | None) -> bool:
 
 
 def encrypt_pii(plaintext: str | None) -> str | None:
+    """Encrypt a PII string. Returns base64(nonce + ciphertext + tag)."""
     if plaintext is None or plaintext == "":
         return plaintext
     if is_encrypted_pii(plaintext):
@@ -73,11 +72,8 @@ def encrypt_pii_if_needed(value: str | None) -> str | None:
     return encrypt_pii(value)
 
 
-def encrypt_pii_if_needed(value: str | None) -> str | None:
-    return encrypt_pii(value)
-
-
-def cle(encrypted: str | None) -> str | None:
+def decrypt_pii(encrypted: str | None) -> str | None:
+    """Decrypt a PII string from base64(nonce + ciphertext + tag)."""
     if encrypted is None or encrypted == "":
         return encrypted
     if not is_encrypted_pii(encrypted):
@@ -107,4 +103,6 @@ class EncryptedText(TypeDecorator):
 
 
 def generate_encryption_key() -> str:
-    return base64.b64encode(os.urandom(32)).decode("ascii")
+    """Generate a new AES-256 key. Use once, store in Secrets Manager."""
+    key = os.urandom(32)
+    return base64.b64encode(key).decode("ascii")
