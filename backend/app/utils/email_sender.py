@@ -8,8 +8,10 @@ Phase 2+: Switch to boto3 SES SDK for production.
 
 import logging
 import smtplib
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from typing import TypedDict
 
 from app.core.config import get_settings
 
@@ -17,11 +19,18 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
+class EmailAttachment(TypedDict):
+    filename: str
+    content: bytes
+    content_type: str
+
+
 async def send_email(
     to_email: str,
     subject: str,
     html_body: str,
     text_body: str | None = None,
+    attachments: list[EmailAttachment] | None = None,
 ) -> bool:
     """
     Send a transactional email.
@@ -34,14 +43,26 @@ async def send_email(
         return True
 
     try:
-        msg = MIMEMultipart("alternative")
+        msg = MIMEMultipart("mixed")
         msg["Subject"] = subject
         msg["From"] = settings.FROM_EMAIL
         msg["To"] = to_email
 
+        body_part = MIMEMultipart("alternative")
         if text_body:
-            msg.attach(MIMEText(text_body, "plain"))
-        msg.attach(MIMEText(html_body, "html"))
+            body_part.attach(MIMEText(text_body, "plain"))
+        body_part.attach(MIMEText(html_body, "html"))
+        msg.attach(body_part)
+
+        for attachment in attachments or []:
+            mime_part = MIMEApplication(attachment["content"], _subtype="pdf")
+            mime_part.add_header(
+                "Content-Disposition",
+                "attachment",
+                filename=attachment["filename"],
+            )
+            mime_part.add_header("Content-Type", attachment["content_type"])
+            msg.attach(mime_part)
 
         with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
             server.starttls()

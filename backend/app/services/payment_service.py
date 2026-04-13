@@ -24,6 +24,7 @@ from app.repositories.payment_repository import PaymentRepository
 from app.services.gateways.razorpay_client import razorpay_client
 from app.services.gateways.stripe_client import stripe_client
 from app.services.fx_rate_service import get_fx_service
+from app.services.notification_service import NotificationService
 from app.services.store_settings_service import StoreSettingsService
 from app.services.order_state_machine import validate_transition
 from app.services.invoice_service import InvoiceService
@@ -596,6 +597,17 @@ class PaymentService:
             logger.error("Invoice generation failed for order %s: %s", order_id, str(inv_err))
             # Non-fatal: order is already confirmed and paid
             # Admin can regenerate via POST /api/v1/admin/invoices/{order_id}/regenerate
+            return
+
+        try:
+            notification_svc = NotificationService(self.db)
+            email_sent = await notification_svc.send_order_confirmation(order_id)
+            if email_sent:
+                logger.info("Order confirmation email sent for order %s", order_id)
+            else:
+                logger.warning("Order confirmation email not sent for order %s", order_id)
+        except Exception as email_err:
+            logger.error("Order confirmation email failed for order %s: %s", order_id, str(email_err))
 
     # ════════════════════════════════════════════════
     # 8. PAYMENT FAILURE HANDLER
