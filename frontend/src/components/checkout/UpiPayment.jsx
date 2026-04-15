@@ -20,6 +20,8 @@ import { Loader2, CheckCircle, XCircle, Shield } from 'lucide-react';
 import apiClient from '../../api/apiClient';
 import toast from 'react-hot-toast';
 
+const VPA_REGEX = /^[a-zA-Z0-9._-]+@[a-zA-Z]{2,}$/;
+
 /**
  * Load Razorpay Checkout.js script dynamically.
  * Idempotent - will not load twice.
@@ -46,8 +48,15 @@ function loadRazorpayScript() {
 }
 
 export default function UpiPayment({ orderId, onSuccess, onFailure }) {
+  const [paymentMode, setPaymentMode] = useState('collect'); // collect | apps
   const [status, setStatus] = useState('idle'); // idle | loading | processing | success | failed
   const [errorMsg, setErrorMsg] = useState('');
+  const [vpa, setVpa] = useState('');
+  const [vpaError, setVpaError] = useState('');
+  const [activeVpa, setActiveVpa] = useState('');
+  const [processingMessage, setProcessingMessage] = useState(
+    'Complete the payment in your UPI app if prompted.'
+  );
   const pollRef = useRef(null);
   const pollCountRef = useRef(0);
   const statusRef = useRef('idle');
@@ -104,6 +113,50 @@ export default function UpiPayment({ orderId, onSuccess, onFailure }) {
     }, 3000);
   }, [orderId, onSuccess, onFailure]);
 
+  const validateVpa = useCallback((value) => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setVpaError('UPI ID is required');
+      return false;
+    }
+    if (trimmed.length < 4 || trimmed.length > 50) {
+      setVpaError('Invalid UPI ID');
+      return false;
+    }
+    if (!VPA_REGEX.test(trimmed)) {
+      setVpaError('Invalid UPI ID');
+      return false;
+    }
+    setVpaError('');
+    return true;
+  }, []);
+
+  const handleCollectPayment = async () => {
+    if (!validateVpa(vpa)) {
+      return;
+    }
+
+    setStatus('loading');
+    setErrorMsg('');
+
+    try {
+      await apiClient.post('/payments/upi/collect', {
+        order_id: orderId,
+        vpa: vpa.trim(),
+      });
+
+      setActiveVpa(vpa.trim());
+      setProcessingMessage('Approve the collect request in your UPI app.');
+      setStatus('processing');
+      startFallbackPoll();
+    } catch (err) {
+      setStatus('failed');
+      const msg = err.message || 'Payment initiation failed';
+      setErrorMsg(msg);
+      toast.error(msg);
+    }
+  };
+
   /**
    * Main payment handler:
    * 1. Create Razorpay order via backend
@@ -140,6 +193,8 @@ export default function UpiPayment({ orderId, onSuccess, onFailure }) {
 
       // Step 4: Open Razorpay Checkout.js modal - UPI only
       setStatus('processing');
+      setActiveVpa('');
+      setProcessingMessage('Complete the payment in your UPI app or scan the QR in the Razorpay window.');
 
       const options = {
         key: keyId,
@@ -265,8 +320,11 @@ export default function UpiPayment({ orderId, onSuccess, onFailure }) {
           Waiting for payment confirmation...
         </p>
         <p className="text-sm text-gray-500">
-          Complete the payment in your UPI app if prompted.
+          {processingMessage}
         </p>
+        {activeVpa && (
+          <p className="text-sm font-medium text-gray-700">{activeVpa}</p>
+        )}
         <button
           onClick={() => {
             if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
@@ -285,20 +343,106 @@ export default function UpiPayment({ orderId, onSuccess, onFailure }) {
   // -- Idle / Loading State --
   return (
     <div className="space-y-4">
-      <button
-        onClick={handlePayment}
-        disabled={status === 'loading'}
-        className="w-full bg-black text-white py-3 rounded-lg font-semibold text-sm hover:bg-gray-800 transition disabled:opacity-50 flex items-center justify-center gap-2"
-      >
-        {status === 'loading' ? (
-          <>
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Initiating Payment...
-          </>
-        ) : (
-          'Pay via UPI'
-        )}
-      </button>
+      <div className="flex gap-2 rounded-xl bg-white p-1 border">
+        <button
+          type="button"
+          onClick={() => setPaymentMode('collect')}
+          className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition ${
+            paymentMode === 'collect'
+              ? 'bg-black text-white'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          Enter UPI ID
+        </button>
+        <button
+          type="button"
+          onClick={() => setPaymentMode('apps')}
+          className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition ${
+            paymentMode === 'apps'
+              ? 'bg-black text-white'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          UPI Apps / Scan QR
+        </button>
+      </div>
+
+      {paymentMode === 'collect' ? (
+        <div className="space-y-3">
+          <div>
+            <label htmlFor="upi-vpa" className="block text-sm font-medium text-gray-700 mb-1.5">
+              UPI ID
+            </label>
+            <input
+              id="upi-vpa"
+              type="text"
+              value={vpa}
+              onChange={(e) => {
+                setVpa(e.target.value);
+                if (vpaError) {
+                  validateVpa(e.target.value);
+                }
+              }}
+              onBlur={() => {
+                if (vpa) {
+                  validateVpa(vpa);
+                }
+              }}
+              placeholder="yourname@paytm"
+              className={`w-full rounded-lg border px-4 py-3 text-sm outline-none transition ${
+                vpaError ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-black'
+              }`}
+              aria-invalid={!!vpaError}
+              aria-describedby={vpaError ? 'upi-vpa-error' : 'upi-vpa-help'}
+            />
+            {vpaError ? (
+              <p id="upi-vpa-error" className="mt-1.5 text-sm text-red-600">
+                {vpaError}
+              </p>
+            ) : (
+              <p id="upi-vpa-help" className="mt-1.5 text-xs text-gray-500">
+                In Razorpay test mode you can still use test VPAs like <span className="font-medium">success@razorpay</span>.
+              </p>
+            )}
+          </div>
+
+          <button
+            onClick={handleCollectPayment}
+            disabled={status === 'loading'}
+            className="w-full bg-black text-white py-3 rounded-lg font-semibold text-sm hover:bg-gray-800 transition disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {status === 'loading' ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Initiating Payment...
+              </>
+            ) : (
+              'Pay via UPI ID'
+            )}
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600">
+            Open Razorpay Checkout to pay with any supported UPI app or scan the QR code.
+          </p>
+          <button
+            onClick={handlePayment}
+            disabled={status === 'loading'}
+            className="w-full bg-black text-white py-3 rounded-lg font-semibold text-sm hover:bg-gray-800 transition disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {status === 'loading' ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Initiating Payment...
+              </>
+            ) : (
+              'Pay via UPI Apps / QR'
+            )}
+          </button>
+        </div>
+      )}
 
       <div className="flex items-center justify-center gap-2 text-xs text-gray-400">
         <Shield className="w-3.5 h-3.5" />
