@@ -11,7 +11,7 @@
 #   VITE_API_URL              — API Gateway URL for frontend .env build
 
 # The name of the workflow.
-name: Deploy Dev V3
+name: Deploy aws_dev
 # To automatically trigger a workflow, use on to define which events 
 # can cause the workflow to run.
 on:
