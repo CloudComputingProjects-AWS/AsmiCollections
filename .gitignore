@@ -63,4 +63,5 @@ backend/Dockerfile
 AGENTS.md
 PRODUCTION_DEPLOYMENT_RUNBOOK_2026-04-22.md
 .codex/environments/
+.codex
 manifest.json
