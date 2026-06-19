@@ -23,14 +23,12 @@ Handler path for Lambda configuration: lambda_handler.handler
 
 import asyncio
 import json
-
+import os
 from mangum import Mangum
 
 # Lazy-loaded references — populated on first invocation
 _mangum_handler = None
 _app = None
-
-
 
 def _ensure_app():
     """

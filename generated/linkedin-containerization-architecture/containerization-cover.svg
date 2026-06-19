@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Architectural Consistency in Containerized Delivery</title>
+  <desc id="desc">Executive cover visual for an article about aligning local Docker Compose, Docker Hub base images, Amazon ECR deployment images, API Gateway throttling, and Postgres-backed application state.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="0.5" stop-color="#17324f"/>
+      <stop offset="1" stop-color="#243b2f"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.06"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#020617" flood-opacity="0.35"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#dbeafe"/>
+    </marker>
+    <style>
+      .h1{font:700 64px Arial, sans-serif;fill:#f8fafc;letter-spacing:0}
+      .sub{font:400 27px Arial, sans-serif;fill:#cbd5e1;letter-spacing:0}
+      .eyebrow{font:700 20px Arial, sans-serif;fill:#93c5fd;letter-spacing:2px}
+      .label{font:700 24px Arial, sans-serif;fill:#f8fafc}
+      .small{font:400 18px Arial, sans-serif;fill:#cbd5e1}
+      .panel{fill:url(#panel);stroke:#94a3b8;stroke-opacity:.45;stroke-width:1.5;rx:24;filter:url(#shadow)}
+      .chip{fill:#e0f2fe;rx:18}
+      .chipText{font:700 16px Arial, sans-serif;fill:#075985}
+      .line{stroke:#dbeafe;stroke-width:4;fill:none;marker-end:url(#arrow);opacity:.9}
+      .aws{fill:#ff9900}
+      .dark{fill:#232f3e}
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <text x="92" y="130" class="eyebrow">CODEBASE-VERIFIED ARCHITECTURE</text>
+  <text x="92" y="218" class="h1">Architectural Consistency</text>
+  <text x="92" y="294" class="h1">in Containerized Delivery</text>
+  <text x="96" y="357" class="sub">How we separated local containers, deployment images, rate limiting, and shared application state</text>
+
+  <rect x="96" y="520" width="332" height="190" class="panel"/>
+  <rect x="126" y="550" width="132" height="36" class="chip"/>
+  <text x="147" y="573" class="chipText">LOCAL</text>
+  <text x="126" y="625" class="label">Docker Compose</text>
+  <text x="126" y="660" class="small">Postgres image from Docker Hub</text>
+  <text x="126" y="689" class="small">API image built from backend/Dockerfile</text>
+
+  <rect x="634" y="520" width="332" height="190" class="panel"/>
+  <rect x="664" y="550" width="132" height="36" class="chip"/>
+  <text x="687" y="573" class="chipText">CLOUD</text>
+  <text x="664" y="625" class="label">Amazon ECR</text>
+  <text x="664" y="660" class="small">Lambda image from Dockerfile.lambda</text>
+  <text x="664" y="689" class="small">Deployed by GitHub SHA tag</text>
+
+  <rect x="1172" y="520" width="332" height="190" class="panel"/>
+  <rect x="1202" y="550" width="132" height="36" class="chip"/>
+  <text x="1221" y="573" class="chipText">STATE</text>
+  <text x="1202" y="625" class="label">Postgres Only</text>
+  <text x="1202" y="660" class="small">FX snapshots in fx_rates</text>
+  <text x="1202" y="689" class="small">Rate limiting at API Gateway</text>
+
+  <path class="line" d="M438 615 C510 575 560 575 626 615"/>
+  <path class="line" d="M976 615 C1048 575 1100 575 1164 615"/>
+
+  <g transform="translate(705 195)">
+    <rect x="0" y="0" width="220" height="160" rx="24" fill="#ffffff" fill-opacity=".12" stroke="#bfdbfe" stroke-opacity=".55"/>
+    <path class="aws" d="M72 46h76v66H72z"/>
+    <path class="dark" d="M84 58h52v42H84z"/>
+    <text x="38" y="142" class="small">Container registry boundary</text>
+  </g>
+</svg>

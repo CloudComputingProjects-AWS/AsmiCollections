@@ -27,14 +27,14 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = 10
     DB_ECHO: bool = False
 
-    # ────────────────── Redis ──────────────────
-    REDIS_URL: str = "redis://localhost:6379/0"
-
     # ────────────────── Auth / JWT ──────────────────
     SECRET_KEY: str 
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+      # ────────────────── Auth Image callback ──────────────────
+    IMAGE_CALLBACK_SECRET: str = ""
 
     # ────────────────── Password Hashing ──────────────────
     BCRYPT_ROUNDS: int = 12
@@ -82,10 +82,18 @@ class Settings(BaseSettings):
     # ────────────────── Rate Limiting ──────────────────
     RATE_LIMIT_AUTH: int = 5        # requests per minute on auth endpoints
     RATE_LIMIT_API: int = 300       # requests per minute on general API
-
+    # AWS edge/API protection verification
+    AWS_REGION: str = "ap-south-1"
+    API_GATEWAY_ID: str = ""
+    API_GATEWAY_STAGE: str = "$default"
+    EXPECTED_API_THROTTLE_BURST: int = 10
+    EXPECTED_API_THROTTLE_RATE: float = 5.0
     # ────────────────── CORS ──────────────────
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
-
+    # Security headers / host validation
+    TRUSTED_HOSTS: list[str] = ["localhost", "127.0.0.1", "*.execute-api.ap-south-1.amazonaws.com"]
+    ENABLE_SECURITY_HEADERS: bool = True
+    ENABLE_HSTS: bool = False
     class Config:
         env_file = ".env"
         case_sensitive = True

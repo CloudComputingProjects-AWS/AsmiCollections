@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Before and after architectural consistency</title>
+  <desc id="desc">Before-and-after diagram showing Redis-dependent application logic replaced by AWS API Gateway throttling and Postgres-backed FX rate cache.</desc>
+  <defs>
+    <marker id="arrowRed" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#991b1b"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#166534"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#0f172a" flood-opacity="0.16"/>
+    </filter>
+    <style>
+      .bg{fill:#f8fafc}
+      .title{font:700 42px Arial, sans-serif;fill:#0f172a}
+      .sub{font:400 21px Arial, sans-serif;fill:#475569}
+      .panel{fill:#ffffff;stroke:#d7dee8;stroke-width:2;rx:20;filter:url(#shadow)}
+      .bad{fill:#fef2f2;stroke:#fecaca;stroke-width:2;rx:16}
+      .good{fill:#f0fdf4;stroke:#bbf7d0;stroke-width:2;rx:16}
+      .neutral{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2;rx:16}
+      .h{font:700 28px Arial, sans-serif;fill:#0f172a}
+      .label{font:700 21px Arial, sans-serif;fill:#0f172a}
+      .text{font:400 17px Arial, sans-serif;fill:#475569}
+      .warn{font:700 17px Arial, sans-serif;fill:#991b1b}
+      .ok{font:700 17px Arial, sans-serif;fill:#166534}
+      .redline{stroke:#991b1b;stroke-width:3;fill:none;marker-end:url(#arrowRed)}
+      .greenline{stroke:#166534;stroke-width:3;fill:none;marker-end:url(#arrowGreen)}
+      .chipbad{fill:#fee2e2;rx:15}
+      .chipgood{fill:#dcfce7;rx:15}
+      .chiptextbad{font:700 14px Arial, sans-serif;fill:#991b1b}
+      .chiptextgood{font:700 14px Arial, sans-serif;fill:#166534}
+    </style>
+  </defs>
+  <rect class="bg" width="1600" height="1000"/>
+  <text x="70" y="82" class="title">How the Inconsistency Was Created, Then Resolved</text>
+  <text x="70" y="121" class="sub">The fix was not “remove containers.” The fix was to make each runtime responsibility explicit and consistent.</text>
+
+  <rect x="70" y="185" width="700" height="690" class="panel"/>
+  <rect x="110" y="222" width="128" height="34" class="chipbad"/>
+  <text x="130" y="244" class="chiptextbad">BEFORE</text>
+  <text x="110" y="305" class="h">Mixed runtime assumptions</text>
+
+  <rect x="125" y="360" width="250" height="110" class="bad"/>
+  <text x="155" y="405" class="label">Local Compose</text>
+  <text x="155" y="438" class="text">Postgres + Redis + API</text>
+
+  <rect x="465" y="360" width="250" height="110" class="bad"/>
+  <text x="495" y="405" class="label">App Middleware</text>
+  <text x="495" y="438" class="text">Redis rate limiter</text>
+
+  <rect x="295" y="550" width="250" height="110" class="bad"/>
+  <text x="325" y="595" class="label">AWS Lambda</text>
+  <text x="325" y="628" class="text">No REDIS_URL found</text>
+
+  <rect x="125" y="710" width="590" height="90" class="bad"/>
+  <text x="155" y="746" class="warn">Result: local and AWS dev did not express the same state architecture.</text>
+  <text x="155" y="775" class="text">The app carried Redis logic while AWS dev protection lived at API Gateway.</text>
+
+  <path class="redline" d="M375 415 H455"/>
+  <path class="redline" d="M590 470 C575 520 530 545 505 555"/>
+
+  <rect x="830" y="185" width="700" height="690" class="panel"/>
+  <rect x="870" y="222" width="128" height="34" class="chipgood"/>
+  <text x="890" y="244" class="chiptextgood">AFTER</text>
+  <text x="870" y="305" class="h">Aligned responsibility boundaries</text>
+
+  <rect x="885" y="360" width="250" height="110" class="good"/>
+  <text x="915" y="405" class="label">Local Compose</text>
+  <text x="915" y="438" class="text">Postgres + API</text>
+
+  <rect x="1225" y="360" width="250" height="110" class="good"/>
+  <text x="1255" y="405" class="label">API Gateway</text>
+  <text x="1255" y="438" class="text">Auth route throttling</text>
+
+  <rect x="885" y="550" width="250" height="110" class="good"/>
+  <text x="915" y="595" class="label">Postgres</text>
+  <text x="915" y="628" class="text">fx_rates JSONB cache</text>
+
+  <rect x="1225" y="550" width="250" height="110" class="good"/>
+  <text x="1255" y="595" class="label">FX Service</text>
+  <text x="1255" y="628" class="text">cache first, API on miss</text>
+
+  <rect x="885" y="710" width="590" height="90" class="good"/>
+  <text x="915" y="746" class="ok">Result: Postgres is the only application datastore in local and AWS dev.</text>
+  <text x="915" y="775" class="text">Rate limiting is enforced before Lambda; FX cache is shared through Postgres.</text>
+
+  <path class="greenline" d="M1135 415 H1215"/>
+  <path class="greenline" d="M1135 605 H1215"/>
+</svg>

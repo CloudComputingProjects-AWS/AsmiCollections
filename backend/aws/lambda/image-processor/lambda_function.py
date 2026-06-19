@@ -22,7 +22,9 @@ import os
 import urllib.parse
 import urllib.request
 from typing import Any
-
+import hashlib
+import hmac
+import time
 import boto3
 from PIL import Image
 
@@ -42,7 +44,7 @@ SIZES = [
 ]
 
 s3_client = boto3.client("s3", region_name=AWS_REGION)
-
+IMAGE_CALLBACK_SECRET = os.environ.get("IMAGE_CALLBACK_SECRET")
 
 # --------------- Handler ---------------
 
@@ -188,13 +190,27 @@ def lambda_handler(event: dict, context: Any) -> dict:
 # --------------- Helpers ---------------
 
 def _post_callback(data: dict) -> None:
-    """POST JSON callback to the backend API."""
-    body = json.dumps(data).encode("utf-8")
+    if not IMAGE_CALLBACK_SECRET:
+        raise RuntimeError("IMAGE_CALLBACK_SECRET is not configured")
+
+    body = json.dumps(data, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    timestamp = str(int(time.time()))
+    signed_payload = timestamp.encode("utf-8") + b"." + body
+
+    signature = hmac.new(
+        IMAGE_CALLBACK_SECRET.encode("utf-8"),
+        signed_payload,
+        hashlib.sha256,
+    ).hexdigest()
 
     req = urllib.request.Request(
         CALLBACK_URL,
         data=body,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "X-Ashmi-Timestamp": timestamp,
+            "X-Ashmi-Signature": f"sha256={signature}",
+        },
         method="POST",
     )
 

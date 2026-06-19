@@ -643,8 +643,24 @@ class Review(Base):
 
 
 
-# SECTION L: PAYMENT SAFETY & ADMIN AUDIT
+# SECTION L: PAYMENT SAFETY, FX RATES & ADMIN AUDIT
 # ════════════════════════════════════════════════
+
+
+class FXRate(Base):
+    __tablename__ = "fx_rates"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    base_currency = Column(String(3), nullable=False, index=True)
+    rates = Column(JSONB, nullable=False)
+    source = Column(String(100), nullable=False)
+    fetched_at = Column(DateTime(timezone=True), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index("idx_fx_rates_base_expires", "base_currency", "expires_at"),
+    )
 
 
 class PaymentEvent(Base):

@@ -31,6 +31,7 @@ frontend/.vite/
 *.log
 
 # Docker
+docker-compose.yml
 docker-compose.override.yml
 
 # Temp / uploads
@@ -60,3 +61,5 @@ seed_test_data.py
 
 backend/Dockerfile
 AGENTS.md
+PRODUCTION_DEPLOYMENT_RUNBOOK_2026-04-22.md
+manifest.json
