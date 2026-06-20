@@ -58,14 +58,14 @@ jobs:
             CURRENT_VARS='{}'
           fi
 
-          MERGED_VARS=$(echo "$CURRENT_VARS" | jq -c \
+                    ENVIRONMENT_PAYLOAD=$(echo "$CURRENT_VARS" | jq -c \
             --arg image_callback_secret "$IMAGE_CALLBACK_SECRET" \
-            '. + {IMAGE_CALLBACK_SECRET: $image_callback_secret}')
+            '{Variables: (. + {IMAGE_CALLBACK_SECRET: $image_callback_secret})}')
 
           aws lambda update-function-configuration \
             --function-name ${{ vars.LAMBDA_FUNCTION_NAME }} \
             --region ${{ vars.AWS_REGION }} \
-            --environment "Variables=$MERGED_VARS"
+            --environment "$ENVIRONMENT_PAYLOAD"
 
       - name: Wait for backend Lambda configuration update
         run: |
@@ -148,7 +148,7 @@ jobs:
           echo "callback_url=$CALLBACK_URL" >> "$GITHUB_OUTPUT"
           echo "cloudfront_domain=$CLOUDFRONT_DOMAIN" >> "$GITHUB_OUTPUT"
 
-            - name: Sync image processor Lambda configuration
+      - name: Sync image processor Lambda configuration
         env:
           IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
           CALLBACK_URL: ${{ steps.image-callback.outputs.callback_url }}
@@ -178,7 +178,7 @@ jobs:
             --function-name ${{ vars.IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME }} \
             --region ${{ vars.AWS_REGION }} \
             --environment "$ENVIRONMENT_PAYLOAD"
-            
+
       - name: Wait for image processor configuration update
         run: |
           aws lambda wait function-updated \
