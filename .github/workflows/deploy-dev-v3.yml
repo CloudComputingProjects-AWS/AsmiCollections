@@ -23,11 +23,55 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Validate backend deployment settings
+        env:
+          AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          LAMBDA_FUNCTION_NAME: ${{ vars.LAMBDA_FUNCTION_NAME }}
+          IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
+        run: |
+          for name in AWS_ROLE_TO_ASSUME AWS_REGION ECR_REPOSITORY LAMBDA_FUNCTION_NAME IMAGE_CALLBACK_SECRET; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not configured for aws_dev"
+              exit 1
+            fi
+          done
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Sync backend Lambda callback secret
+        env:
+          IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
+        run: |
+          CURRENT_VARS=$(aws lambda get-function-configuration \
+            --function-name ${{ vars.LAMBDA_FUNCTION_NAME }} \
+            --region ${{ vars.AWS_REGION }} \
+            --query 'Environment.Variables' \
+            --output json)
+
+          if [ "$CURRENT_VARS" = "null" ]; then
+            CURRENT_VARS='{}'
+          fi
+
+          MERGED_VARS=$(echo "$CURRENT_VARS" | jq -c \
+            --arg image_callback_secret "$IMAGE_CALLBACK_SECRET" \
+            '. + {IMAGE_CALLBACK_SECRET: $image_callback_secret}')
+
+          aws lambda update-function-configuration \
+            --function-name ${{ vars.LAMBDA_FUNCTION_NAME }} \
+            --region ${{ vars.AWS_REGION }} \
+            --environment "Variables=$MERGED_VARS"
+
+      - name: Wait for backend Lambda configuration update
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ vars.LAMBDA_FUNCTION_NAME }} \
+            --region ${{ vars.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -57,6 +101,118 @@ jobs:
         run: |
           aws lambda wait function-updated \
             --function-name ${{ vars.LAMBDA_FUNCTION_NAME }} \
+            --region ${{ vars.AWS_REGION }}
+
+  deploy-image-processor:
+    name: Image Processor - ECR + Lambda
+    runs-on: ubuntu-latest
+    environment: aws_dev
+    needs: deploy-backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Validate image processor deployment settings
+        env:
+          AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          IMAGE_PROCESSOR_ECR_REPOSITORY: ${{ vars.IMAGE_PROCESSOR_ECR_REPOSITORY }}
+          IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME: ${{ vars.IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME }}
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
+        run: |
+          for name in AWS_ROLE_TO_ASSUME AWS_REGION IMAGE_PROCESSOR_ECR_REPOSITORY IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME VITE_API_URL IMAGE_CALLBACK_SECRET; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not configured for aws_dev"
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Derive callback configuration
+        id: image-callback
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+        run: |
+          CALLBACK_URL="${VITE_API_URL%/}/admin/images/callback"
+          CLOUDFRONT_DOMAIN="${VITE_API_URL#https://}"
+          CLOUDFRONT_DOMAIN="${CLOUDFRONT_DOMAIN#http://}"
+          CLOUDFRONT_DOMAIN="${CLOUDFRONT_DOMAIN%%/*}"
+
+          echo "callback_url=$CALLBACK_URL" >> "$GITHUB_OUTPUT"
+          echo "cloudfront_domain=$CLOUDFRONT_DOMAIN" >> "$GITHUB_OUTPUT"
+
+      - name: Sync image processor Lambda configuration
+        env:
+          IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
+          CALLBACK_URL: ${{ steps.image-callback.outputs.callback_url }}
+          CLOUDFRONT_DOMAIN: ${{ steps.image-callback.outputs.cloudfront_domain }}
+        run: |
+          CURRENT_VARS=$(aws lambda get-function-configuration \
+            --function-name ${{ vars.IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME }} \
+            --region ${{ vars.AWS_REGION }} \
+            --query 'Environment.Variables' \
+            --output json)
+
+          if [ "$CURRENT_VARS" = "null" ]; then
+            CURRENT_VARS='{}'
+          fi
+
+          MERGED_VARS=$(echo "$CURRENT_VARS" | jq -c \
+            --arg image_callback_secret "$IMAGE_CALLBACK_SECRET" \
+            --arg callback_url "$CALLBACK_URL" \
+            --arg cloudfront_domain "$CLOUDFRONT_DOMAIN" \
+            '. + {
+              IMAGE_CALLBACK_SECRET: $image_callback_secret,
+              CALLBACK_URL: $callback_url,
+              CLOUDFRONT_DOMAIN: $cloudfront_domain
+            }')
+
+          aws lambda update-function-configuration \
+            --function-name ${{ vars.IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME }} \
+            --region ${{ vars.AWS_REGION }} \
+            --environment "Variables=$MERGED_VARS"
+
+      - name: Wait for image processor configuration update
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ vars.IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME }} \
+            --region ${{ vars.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image processor to ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        working-directory: backend/aws/lambda/image-processor
+        run: |
+          docker build \
+            -t $ECR_REGISTRY/${{ vars.IMAGE_PROCESSOR_ECR_REPOSITORY }}:$IMAGE_TAG \
+            .
+          docker push $ECR_REGISTRY/${{ vars.IMAGE_PROCESSOR_ECR_REPOSITORY }}:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/${{ vars.IMAGE_PROCESSOR_ECR_REPOSITORY }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update image processor Lambda to new image
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ vars.IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME }} \
+            --image-uri ${{ steps.build-image.outputs.image }} \
+            --region ${{ vars.AWS_REGION }}
+
+      - name: Wait for image processor Lambda update to complete
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ vars.IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME }} \
             --region ${{ vars.AWS_REGION }}
 
   deploy-frontend:
