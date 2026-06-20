@@ -78,7 +78,7 @@ if settings.TRUSTED_HOSTS:
         allowed_hosts=settings.TRUSTED_HOSTS,
     )
 
-# 4. Admin Audit Logging
+# 3. Admin Audit Logging
 app.add_middleware(AdminAuditLogMiddleware)
 
 # ──────────────── Routes ────────────────

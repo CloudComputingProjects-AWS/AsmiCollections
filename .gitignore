@@ -31,7 +31,6 @@ frontend/.vite/
 *.log
 
 # Docker
-docker-compose.yml
 docker-compose.override.yml
 
 # Temp / uploads
