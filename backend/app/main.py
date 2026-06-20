@@ -72,10 +72,11 @@ if settings.ENABLE_SECURITY_HEADERS:
         enable_hsts=settings.ENABLE_HSTS,
     )
 # 2. Trusted Host
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=settings.TRUSTED_HOSTS,
-)
+if settings.TRUSTED_HOSTS:
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=settings.TRUSTED_HOSTS,
+    )
 # 3. Security Headers
 app.add_middleware(SecurityHeadersMiddleware, enable_hsts=settings.ENABLE_HSTS)
 # 4. Admin Audit Logging

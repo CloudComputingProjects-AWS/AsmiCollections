@@ -80,8 +80,8 @@ class Settings(BaseSettings):
     SELLER_STATE_CODE: str = "27"
 
     # ────────────────── Rate Limiting ──────────────────
-    RATE_LIMIT_AUTH: int = 5        # requests per minute on auth endpoints
-    RATE_LIMIT_API: int = 300       # requests per minute on general API
+    # RATE_LIMIT_AUTH: int = 5        # requests per minute on auth endpoints
+    # RATE_LIMIT_API: int = 300       # requests per minute on general API
     # AWS edge/API protection verification
     AWS_REGION: str = ""
     API_GATEWAY_ID: str = ""
@@ -91,7 +91,11 @@ class Settings(BaseSettings):
     # ────────────────── CORS ──────────────────
     CORS_ORIGINS: list[str] = []
     # Security headers / host validation
-    TRUSTED_HOSTS: list[str] = []
+    TRUSTED_HOSTS: list[str] = [
+    "localhost",
+    "127.0.0.1",
+    "*.execute-api.ap-south-1.amazonaws.com",
+    ]
     ENABLE_SECURITY_HEADERS: bool = True
     ENABLE_HSTS: bool = False
     class Config:
