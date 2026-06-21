@@ -58,7 +58,7 @@ jobs:
             CURRENT_VARS='{}'
           fi
 
-                    ENVIRONMENT_PAYLOAD=$(echo "$CURRENT_VARS" | jq -c \
+            ENVIRONMENT_PAYLOAD=$(echo "$CURRENT_VARS" | jq -c \
             --arg image_callback_secret "$IMAGE_CALLBACK_SECRET" \
             '{Variables: (. + {IMAGE_CALLBACK_SECRET: $image_callback_secret})}')
 
@@ -122,7 +122,7 @@ jobs:
           IMAGE_CDN_DOMAIN: ${{ vars.IMAGE_CDN_DOMAIN }}
           IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
         run: |
-          for name in AWS_ROLE_TO_ASSUME AWS_REGION IMAGE_PROCESSOR_ECR_REPOSITORY IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME VITE_API_URL IMAGE_CALLBACK_SECRET; do
+          for name in AWS_ROLE_TO_ASSUME AWS_REGION IMAGE_PROCESSOR_ECR_REPOSITORY IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME VITE_API_URL IMAGE_CDN_DOMAIN IMAGE_CALLBACK_SECRET; do
             if [ -z "${!name}" ]; then
               echo "::error::$name is not configured for aws_dev"
               exit 1
@@ -139,9 +139,9 @@ jobs:
         id: image-callback
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          IMAGE_CDN_DOMAIN: ${{ vars.IMAGE_CDN_DOMAIN }}
         run: |
           CALLBACK_URL="${VITE_API_URL%/}/admin/images/callback"
-          IMAGE_CDN_DOMAIN: ${{ vars.IMAGE_CDN_DOMAIN }}
           
           echo "callback_url=$CALLBACK_URL" >> "$GITHUB_OUTPUT"
           echo "image_cdn_domain=$IMAGE_CDN_DOMAIN" >> "$GITHUB_OUTPUT"
