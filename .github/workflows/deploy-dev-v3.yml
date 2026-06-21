@@ -18,7 +18,7 @@ jobs:
     name: Backend - ECR + Lambda
     runs-on: ubuntu-latest
     environment: aws_dev
-
+    needs: deploy-image-processor
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -107,8 +107,7 @@ jobs:
     name: Image Processor - ECR + Lambda
     runs-on: ubuntu-latest
     environment: aws_dev
-    needs: deploy-backend
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -120,6 +119,7 @@ jobs:
           IMAGE_PROCESSOR_ECR_REPOSITORY: ${{ vars.IMAGE_PROCESSOR_ECR_REPOSITORY }}
           IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME: ${{ vars.IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME }}
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          IMAGE_CDN_DOMAIN: ${{ vars.IMAGE_CDN_DOMAIN }}
           IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
         run: |
           for name in AWS_ROLE_TO_ASSUME AWS_REGION IMAGE_PROCESSOR_ECR_REPOSITORY IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME VITE_API_URL IMAGE_CALLBACK_SECRET; do
@@ -141,18 +141,16 @@ jobs:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: |
           CALLBACK_URL="${VITE_API_URL%/}/admin/images/callback"
-          CLOUDFRONT_DOMAIN="${VITE_API_URL#https://}"
-          CLOUDFRONT_DOMAIN="${CLOUDFRONT_DOMAIN#http://}"
-          CLOUDFRONT_DOMAIN="${CLOUDFRONT_DOMAIN%%/*}"
-
+          IMAGE_CDN_DOMAIN: ${{ vars.IMAGE_CDN_DOMAIN }}
+          
           echo "callback_url=$CALLBACK_URL" >> "$GITHUB_OUTPUT"
-          echo "cloudfront_domain=$CLOUDFRONT_DOMAIN" >> "$GITHUB_OUTPUT"
+          echo "image_cdn_domain=$IMAGE_CDN_DOMAIN" >> "$GITHUB_OUTPUT"
 
       - name: Sync image processor Lambda configuration
         env:
           IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
           CALLBACK_URL: ${{ steps.image-callback.outputs.callback_url }}
-          CLOUDFRONT_DOMAIN: ${{ steps.image-callback.outputs.cloudfront_domain }}
+          IMAGE_CDN_DOMAIN: ${{ steps.image-callback.outputs.image_cdn_domain }}
         run: |
           CURRENT_VARS=$(aws lambda get-function-configuration \
             --function-name ${{ vars.IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME }} \
@@ -167,11 +165,11 @@ jobs:
           ENVIRONMENT_PAYLOAD=$(echo "$CURRENT_VARS" | jq -c \
             --arg image_callback_secret "$IMAGE_CALLBACK_SECRET" \
             --arg callback_url "$CALLBACK_URL" \
-            --arg cloudfront_domain "$CLOUDFRONT_DOMAIN" \
+            --arg image_cdn_domain "$IMAGE_CDN_DOMAIN" \
             '{Variables: (. + {
               IMAGE_CALLBACK_SECRET: $image_callback_secret,
               CALLBACK_URL: $callback_url,
-              CLOUDFRONT_DOMAIN: $cloudfront_domain
+              IMAGE_CDN_DOMAIN: $image_cdn_domain
             })}')
 
           aws lambda update-function-configuration \

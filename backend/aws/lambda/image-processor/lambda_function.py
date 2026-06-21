@@ -35,7 +35,7 @@ CALLBACK_URL = os.environ.get(
     "CALLBACK_URL",
     "https://9amq4q9qa4.execute-api.ap-south-1.amazonaws.com/api/v1/admin/images/callback",
 )
-CLOUDFRONT_DOMAIN = os.environ.get("CLOUDFRONT_DOMAIN", "")
+IMAGE_CDN_DOMAIN = os.environ.get("IMAGE_CDN_DOMAIN", "")
 
 SIZES = [
     {"suffix": "", "width": 1200, "quality": 85},       # processed (full)
@@ -71,7 +71,8 @@ def lambda_handler(event: dict, context: Any) -> dict:
         product_id = parts[2]
         original_filename = parts[3]
         name_without_ext = original_filename.rsplit(".", 1)[0]
-
+        # Public host used by browsers to fetch processed images.
+        # This must be the asset/CDN host, not the API host.
         # image_id is the UUID portion of the filename
         image_id = name_without_ext
 
@@ -141,8 +142,8 @@ def lambda_handler(event: dict, context: Any) -> dict:
                 )
 
                 # Build URL (CloudFront or S3 direct)
-                if CLOUDFRONT_DOMAIN:
-                    base_url = f"https://{CLOUDFRONT_DOMAIN}"
+                if IMAGE_CDN_DOMAIN:
+                    base_url = f"https://{IMAGE_CDN_DOMAIN}"
                 else:
                     base_url = f"https://{bucket}.s3.amazonaws.com"
 
