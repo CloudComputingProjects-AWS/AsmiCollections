@@ -136,7 +136,7 @@ class TestFXRateService:
     @pytest.mark.asyncio
     async def test_same_currency_returns_identity(self):
         from app.services.fx_rate_service import FXRateService
-        svc = FXRateService()
-        rate, source, _ = await svc.get_rate("USD", "USD")
+        svc = FXRateService(db=AsyncMock())
+        rate, source, _, _ = await svc.get_rate("USD", "USD")
         assert rate == Decimal("1.0")
         assert source == "identity"

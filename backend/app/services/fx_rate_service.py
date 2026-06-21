@@ -1,36 +1,38 @@
 """
-FX Rate Service — Daily exchange rate sync and caching.
+FX Rate Service - daily exchange rate sync and Postgres-backed caching.
 
-Uses Open Exchange Rates API (free tier: 1000 requests/month).
-Caches rates in Redis with configurable TTL.
+Uses Open Exchange Rates API when configured. Stores shared cache snapshots in
+the fx_rates table so local and AWS environments use Postgres as the only
+application datastore.
 """
 
-import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.payment_config import get_payment_settings
+from app.models.models import FXRate
 
 logger = logging.getLogger(__name__)
 
 settings = get_payment_settings()
 
-_rate_cache: dict[str, dict] = {}
-
 
 class FXRateService:
-    """Fetches, caches, and provides exchange rates."""
+    """Fetches, stores, and provides exchange rates from Postgres."""
 
     OPEN_EXCHANGE_URL = "https://openexchangerates.org/api/latest.json"
+    API_BASE_CURRENCY = "USD"
 
-    def __init__(self, redis_client=None):
-        self.redis = redis_client
+    def __init__(self, db: AsyncSession):
+        self.db = db
 
     async def fetch_rates_from_api(self) -> dict[str, float]:
-        """Fetch latest rates from Open Exchange Rates (base USD)."""
+        """Fetch latest rates from Open Exchange Rates, whose free API is USD based."""
         if not settings.OPEN_EXCHANGE_RATES_APP_ID:
             logger.warning("OPEN_EXCHANGE_RATES_APP_ID not set, using fallback rates")
             return self._fallback_rates()
@@ -45,45 +47,52 @@ class FXRateService:
             return data.get("rates", {})
 
     async def sync_rates(self) -> dict[str, float]:
-        """Fetch rates and store in cache. Called by daily cron."""
+        """Fetch rates and store a shared cache snapshot in Postgres."""
+        source = "openexchangerates"
         try:
             rates = await self.fetch_rates_from_api()
-        except Exception as e:
-            logger.error("FX rate fetch failed: %s — using cached/fallback", str(e))
-            rates = await self._get_cached_rates()
-            if not rates:
-                rates = self._fallback_rates()
-            return rates
+        except Exception as exc:
+            logger.error("FX rate fetch failed: %s - using cached/fallback", str(exc))
+            cached = await self._get_cached_rates(include_expired=True)
+            if cached:
+                return cached["rates"]
+            rates = self._fallback_rates()
+            source = "fallback"
+        else:
+            if not settings.OPEN_EXCHANGE_RATES_APP_ID:
+                source = "fallback"
 
-        cache_payload = {
-            "rates": rates,
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
-            "source": "openexchangerates",
-        }
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(seconds=settings.FX_RATE_CACHE_TTL_SECONDS)
 
-        if self.redis:
-            try:
-                await self.redis.set(
-                    "fx_rates:latest",
-                    json.dumps(cache_payload),
-                    ex=settings.FX_RATE_CACHE_TTL_SECONDS,
-                )
-            except Exception as e:
-                logger.warning("Redis FX cache write failed: %s", str(e))
+        self.db.add(
+            FXRate(
+                base_currency=self.API_BASE_CURRENCY,
+                rates=rates,
+                source=source,
+                fetched_at=now,
+                expires_at=expires_at,
+                created_at=now,
+            )
+        )
+        await self.db.flush()
 
-        _rate_cache["latest"] = cache_payload
         logger.info("FX rates synced: %d currencies", len(rates))
         return rates
 
     async def get_rate(
         self, from_currency: str, to_currency: str,
-    ) -> tuple[Decimal, str, datetime]:
+    ) -> tuple[Decimal, str, datetime, datetime]:
         """
         Get exchange rate between two currencies.
-        Returns: (rate, source, fetched_at)
+        Returns: (rate, source, fetched_at, expires_at).
         """
-        if from_currency.upper() == to_currency.upper():
-            return Decimal("1.0"), "identity", datetime.now(timezone.utc)
+        from_currency = from_currency.upper()
+        to_currency = to_currency.upper()
+
+        if from_currency == to_currency:
+            now = datetime.now(timezone.utc)
+            return Decimal("1.0"), "identity", now, now
 
         cached = await self._get_cached_rates()
         if not cached:
@@ -94,49 +103,75 @@ class FXRateService:
             raise RuntimeError("Unable to fetch FX rates")
 
         rates = cached["rates"]
-        source = cached.get("source", "openexchangerates")
-        fetched_at = datetime.fromisoformat(cached["fetched_at"])
+        source = cached["source"]
+        fetched_at = cached["fetched_at"]
+        expires_at = cached["expires_at"]
 
-        from_rate = Decimal(str(rates.get(from_currency.upper(), 1)))
-        to_rate = Decimal(str(rates.get(to_currency.upper(), 1)))
+        from_rate = Decimal(str(rates.get(from_currency, 1)))
+        to_rate = Decimal(str(rates.get(to_currency, 1)))
 
         if from_rate == 0:
             raise ValueError(f"No rate found for {from_currency}")
 
         rate = to_rate / from_rate
-        return rate, source, fetched_at
+        return rate, source, fetched_at, expires_at
 
     async def lock_rate_for_checkout(
         self, base_currency: str, target_currency: str,
     ) -> dict:
         """Lock an FX rate for a checkout session."""
-        rate, source, fetched_at = await self.get_rate(base_currency, target_currency)
+        rate, source, fetched_at, expires_at = await self.get_rate(
+            base_currency,
+            target_currency,
+        )
         return {
             "rate": rate,
             "source": source,
             "fetched_at": fetched_at,
+            "expires_at": expires_at,
             "base_currency": base_currency,
             "target_currency": target_currency,
         }
 
-    async def _get_cached_rates(self) -> dict | None:
-        if self.redis:
-            try:
-                data = await self.redis.get("fx_rates:latest")
-                if data:
-                    return json.loads(data)
-            except Exception:
-                pass
-        return _rate_cache.get("latest")
+    async def _get_cached_rates(self, include_expired: bool = False) -> dict | None:
+        now = datetime.now(timezone.utc)
+        stmt = (
+            select(FXRate)
+            .where(FXRate.base_currency == self.API_BASE_CURRENCY)
+            .order_by(FXRate.fetched_at.desc())
+            .limit(1)
+        )
+
+        if not include_expired:
+            stmt = stmt.where(FXRate.expires_at > now)
+
+        result = await self.db.execute(stmt)
+        row = result.scalar_one_or_none()
+        if not row:
+            return None
+
+        return {
+            "rates": row.rates,
+            "source": row.source,
+            "fetched_at": row.fetched_at,
+            "expires_at": row.expires_at,
+        }
 
     @staticmethod
     def _fallback_rates() -> dict[str, float]:
-        """Hardcoded fallback (approximate). Used only when API + cache both fail."""
+        """Hardcoded fallback used only when API and Postgres cache are unavailable."""
         return {
-            "USD": 1.0, "INR": 83.50, "EUR": 0.92, "GBP": 0.79,
-            "AUD": 1.53, "CAD": 1.36, "JPY": 150.0, "SGD": 1.34, "AED": 3.67,
+            "USD": 1.0,
+            "INR": 83.50,
+            "EUR": 0.92,
+            "GBP": 0.79,
+            "AUD": 1.53,
+            "CAD": 1.36,
+            "JPY": 150.0,
+            "SGD": 1.34,
+            "AED": 3.67,
         }
 
 
-def get_fx_service(redis_client=None) -> FXRateService:
-    return FXRateService(redis_client=redis_client)
+def get_fx_service(db: AsyncSession) -> FXRateService:
+    return FXRateService(db=db)

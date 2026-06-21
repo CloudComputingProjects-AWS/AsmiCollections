@@ -15,26 +15,26 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # ────────────────── Application ──────────────────
-    APP_NAME: str = "Apparel Portal API"
-    APP_VERSION: str = "2.5.0"
+    APP_NAME: str = ""
+    APP_VERSION: str = ""
     DEBUG: bool = False
-    ENVIRONMENT: str = "development"
+    ENVIRONMENT: str = ""
 
     # ────────────────── Database (PostgreSQL) ──────────────────
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/apparel_portal"
-    DATABASE_URL_SYNC: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/apparel_portal"
+    DATABASE_URL: str = ""
+    DATABASE_URL_SYNC: str = ""
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
     DB_ECHO: bool = False
 
-    # ────────────────── Redis ──────────────────
-    REDIS_URL: str = "redis://localhost:6379/0"
-
     # ────────────────── Auth / JWT ──────────────────
     SECRET_KEY: str 
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = ""
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+      # ────────────────── Auth Image callback ──────────────────
+    IMAGE_CALLBACK_SECRET: str = ""
 
     # ────────────────── Password Hashing ──────────────────
     BCRYPT_ROUNDS: int = 12
@@ -59,11 +59,11 @@ class Settings(BaseSettings):
     FX_RATE_CACHE_TTL_SECONDS: int = 86400
 
     # ────────────────── Email ──────────────────
-    SMTP_HOST: str = "email-smtp.ap-south-1.amazonaws.com"
+    SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
-    FROM_EMAIL: str = "noreply@yourstore.com"
+    FROM_EMAIL: str = ""
 
     # ────────────────── Encryption (PII at rest) ──────────────────
     PII_ENCRYPTION_KEY: str = ""  # AES-256 key, base64 encoded
@@ -73,19 +73,31 @@ class Settings(BaseSettings):
     # ────────────────── Business Config ──────────────────
     # SELLER_* values are first-boot defaults only.
     # At runtime, seller info is read from the store_settings table (admin-editable).
-    SELLER_NAME: str = "YourStore Pvt Ltd"
+    SELLER_NAME: str = ""
     SELLER_GSTIN: str = ""
     SELLER_ADDRESS: str = ""
-    SELLER_STATE: str = "Maharashtra"
+    SELLER_STATE: str = ""
     SELLER_STATE_CODE: str = "27"
 
     # ────────────────── Rate Limiting ──────────────────
-    RATE_LIMIT_AUTH: int = 5        # requests per minute on auth endpoints
-    RATE_LIMIT_API: int = 300       # requests per minute on general API
-
+    # RATE_LIMIT_AUTH: int = 5        # requests per minute on auth endpoints
+    # RATE_LIMIT_API: int = 300       # requests per minute on general API
+    # AWS edge/API protection verification
+    AWS_REGION: str = ""
+    API_GATEWAY_ID: str = ""
+    API_GATEWAY_STAGE: str = ""
+    EXPECTED_API_THROTTLE_BURST: int = 10
+    EXPECTED_API_THROTTLE_RATE: float = 5.0
     # ────────────────── CORS ──────────────────
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
-
+    CORS_ORIGINS: list[str] = []
+    # Security headers / host validation
+    TRUSTED_HOSTS: list[str] = [
+    "localhost",
+    "127.0.0.1",
+    "*.execute-api.ap-south-1.amazonaws.com",
+    ]
+    ENABLE_SECURITY_HEADERS: bool = True
+    ENABLE_HSTS: bool = False
     class Config:
         env_file = ".env"
         case_sensitive = True

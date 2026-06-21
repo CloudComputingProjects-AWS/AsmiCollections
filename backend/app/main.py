@@ -13,7 +13,8 @@ from app.api.v1.router import api_v1_router
 from app.core.config import get_settings
 from app.core.database import init_db
 from app.middleware.audit_log import AdminAuditLogMiddleware
-from app.middleware.rate_limiter import RateLimitMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.api.v1.endpoints.payments import (
     router as payment_router,
     webhook_router,
@@ -65,9 +66,17 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Content-Disposition"],
 )
-
-# 2. Rate Limiting (Redis-backed)
-app.add_middleware(RateLimitMiddleware)
+if settings.ENABLE_SECURITY_HEADERS:
+    app.add_middleware(
+        SecurityHeadersMiddleware,
+        enable_hsts=settings.ENABLE_HSTS,
+    )
+# 2. Trusted Host
+if settings.TRUSTED_HOSTS:
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=settings.TRUSTED_HOSTS,
+    )
 
 # 3. Admin Audit Logging
 app.add_middleware(AdminAuditLogMiddleware)

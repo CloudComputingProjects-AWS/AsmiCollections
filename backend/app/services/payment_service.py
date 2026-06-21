@@ -44,10 +44,10 @@ class PaymentServiceError(Exception):
 class PaymentService:
     """Stateless service — injected with a DB session per request."""
 
-    def __init__(self, db: AsyncSession, redis_client=None):
+    def __init__(self, db: AsyncSession):
         self.db = db
         self.repo = PaymentRepository(db)
-        self.fx_service = get_fx_service(redis_client)
+        self.fx_service = get_fx_service(db)
 
     # ════════════════════════════════════════════════
     # 0. PRIVATE HELPERS

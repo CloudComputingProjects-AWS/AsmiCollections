@@ -17,7 +17,6 @@ Routes:
 
 import json
 import logging
-from datetime import timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -199,7 +198,7 @@ async def lock_fx_rate(
             rate=rate_info["rate"],
             source=rate_info["source"],
             fetched_at=rate_info["fetched_at"],
-            expires_at=rate_info["fetched_at"] + timedelta(hours=24),
+            expires_at=rate_info["expires_at"],
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"FX rate fetch failed: {str(e)}")

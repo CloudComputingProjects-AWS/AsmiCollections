@@ -1,11 +1,18 @@
 """
 Image Processing API â€” /api/v1/admin/images/
 Phase 3: Pre-signed upload, Lambda callback, CRUD, reorder, primary toggle.
+starts the upload flow
+receives processing result
+updates image metadata in DB
+lets admins manage images
 """
 
 from uuid import UUID
+import hashlib
+import hmac
+import time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException,Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -22,6 +29,7 @@ from app.schemas.image import (
 )
 from app.schemas.product import ProductImageResponse
 from app.services.image_service import ImageService, ImageServiceError
+from app.core.config import get_settings
 
 router = APIRouter(prefix="/admin/images", tags=["Admin â€” Image Pipeline"])
 
@@ -67,18 +75,50 @@ async def get_upload_url(
 
 # LAMBDA CALLBACK
 
+settings = get_settings()
 
+def _verify_image_callback_signature(request_body: bytes, timestamp: str | None, signature: str | None) -> None:
+    if not settings.IMAGE_CALLBACK_SECRET:
+        raise HTTPException(status_code=500, detail="Image callback secret not configured")
+
+    if not timestamp or not signature:
+        raise HTTPException(status_code=401, detail="Missing callback signature")
+
+    try:
+        ts = int(timestamp)
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid callback timestamp")
+
+    now = int(time.time())
+    if abs(now - ts) > 300:
+        raise HTTPException(status_code=401, detail="Expired callback signature")
+
+    signed_payload = timestamp.encode("utf-8") + b"." + request_body
+
+    expected = hmac.new(
+        settings.IMAGE_CALLBACK_SECRET.encode("utf-8"),
+        signed_payload,
+        hashlib.sha256,
+    ).hexdigest()
+
+    received = signature.removeprefix("sha256=")
+
+    if not hmac.compare_digest(expected, received):
+        raise HTTPException(status_code=401, detail="Invalid callback signature")
+    
 @router.post("/callback")
 async def image_processing_callback(
+    request: Request,
     data: ImageCallbackRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Callback endpoint for Lambda image processor.
-    Updates product_images with processed URLs and status.
-    
-    No auth required â€” should be protected by API key or VPC in production.
-    """
+    body = await request.body()
+
+    _verify_image_callback_signature(
+        request_body=body,
+        timestamp=request.headers.get("X-Ashmi-Timestamp"),
+        signature=request.headers.get("X-Ashmi-Signature"),
+    )
     service = ImageService(db)
     try:
         if data.status == "completed":
