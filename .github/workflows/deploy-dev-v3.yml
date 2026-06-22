@@ -29,9 +29,13 @@ jobs:
           AWS_REGION: ${{ vars.AWS_REGION }}
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
           LAMBDA_FUNCTION_NAME: ${{ vars.LAMBDA_FUNCTION_NAME }}
+          APP_NAME: ${{ vars.APP_NAME }}
+          APP_VERSION: ${{ vars.APP_VERSION }}
+          ENVIRONMENT: ${{ vars.ENVIRONMENT }}
+          JWT_ALGORITHM: ${{ vars.JWT_ALGORITHM }}
           IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
         run: |
-          for name in AWS_ROLE_TO_ASSUME AWS_REGION ECR_REPOSITORY LAMBDA_FUNCTION_NAME IMAGE_CALLBACK_SECRET; do
+          for name in AWS_ROLE_TO_ASSUME AWS_REGION ECR_REPOSITORY LAMBDA_FUNCTION_NAME APP_NAME APP_VERSION ENVIRONMENT JWT_ALGORITHM IMAGE_CALLBACK_SECRET; do
             if [ -z "${!name}" ]; then
               echo "::error::$name is not configured for aws_dev"
               exit 1
@@ -44,8 +48,10 @@ jobs:
           role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Sync backend Lambda callback secret
+      - name: Sync backend Lambda runtime settings
         env:
+          APP_NAME: ${{ vars.APP_NAME }}
+          APP_VERSION: ${{ vars.APP_VERSION }}
           IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
         run: |
           CURRENT_VARS=$(aws lambda get-function-configuration \
@@ -58,9 +64,15 @@ jobs:
             CURRENT_VARS='{}'
           fi
 
-            ENVIRONMENT_PAYLOAD=$(echo "$CURRENT_VARS" | jq -c \
+          ENVIRONMENT_PAYLOAD=$(echo "$CURRENT_VARS" | jq -c \
+            --arg app_name "$APP_NAME" \
+            --arg app_version "$APP_VERSION" \
             --arg image_callback_secret "$IMAGE_CALLBACK_SECRET" \
-            '{Variables: (. + {IMAGE_CALLBACK_SECRET: $image_callback_secret})}')
+            '{Variables: (. + {
+              APP_NAME: $app_name,
+              APP_VERSION: $app_version,
+              IMAGE_CALLBACK_SECRET: $image_callback_secret
+            })}')
 
           aws lambda update-function-configuration \
             --function-name ${{ vars.LAMBDA_FUNCTION_NAME }} \
