@@ -52,6 +52,8 @@ jobs:
         env:
           APP_NAME: ${{ vars.APP_NAME }}
           APP_VERSION: ${{ vars.APP_VERSION }}
+          ENVIRONMENT: ${{ vars.ENVIRONMENT }}
+          JWT_ALGORITHM: ${{ vars.JWT_ALGORITHM }}
           IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
         run: |
           CURRENT_VARS=$(aws lambda get-function-configuration \
@@ -67,10 +69,14 @@ jobs:
           ENVIRONMENT_PAYLOAD=$(echo "$CURRENT_VARS" | jq -c \
             --arg app_name "$APP_NAME" \
             --arg app_version "$APP_VERSION" \
+            --arg environment "$ENVIRONMENT" \
+            --arg jwt_algorithm "$JWT_ALGORITHM" \
             --arg image_callback_secret "$IMAGE_CALLBACK_SECRET" \
             '{Variables: (. + {
               APP_NAME: $app_name,
               APP_VERSION: $app_version,
+              ENVIRONMENT: $environment,
+              JWT_ALGORITHM: $jwt_algorithm,
               IMAGE_CALLBACK_SECRET: $image_callback_secret
             })}')
 
