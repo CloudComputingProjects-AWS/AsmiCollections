@@ -236,6 +236,15 @@ Important details:
 - frontend build uses `VITE_API_URL`
 - frontend artifacts are uploaded to S3 and then CloudFront is invalidated
 
+## Branch / PR Review Language
+
+- If no GitHub pull request has been opened yet, do not call a review an actual PR review
+- For work on `feature/aws-dev-sync` before PR creation, describe review scope as:
+  - pre-PR branch review of `feature/aws-dev-sync` against `develop`
+- Use this local comparison for the prospective PR diff:
+  - `git diff develop...HEAD`
+- A real PR review should only be claimed after a GitHub PR exists and the PR metadata / files changed / CI status are available
+
 ## Security / Auth / Rate Limiting Truths
 
 ### OIDC
@@ -438,5 +447,6 @@ When starting a new session in this repo, assume the following until disproved:
 3. AWS dev frontend is behind CloudFront `E32QTT8QPXCW64`
 4. Local login issues should first be debugged as runtime-health issues before auth-data issues
 5. Docker Compose is local-only and should never be treated as AWS runtime infrastructure
+
 
 
