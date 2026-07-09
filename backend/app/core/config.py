@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     APP_VERSION: str = ""
     DEBUG: bool = False
     ENVIRONMENT: str = ""
+    FRONTEND_URL: str = "http://localhost:3000"
 
     # ────────────────── Database (PostgreSQL) ──────────────────
     DATABASE_URL: str = ""
@@ -107,3 +108,4 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+

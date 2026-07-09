@@ -33,9 +33,12 @@ jobs:
           APP_VERSION: ${{ vars.APP_VERSION }}
           ENVIRONMENT: ${{ vars.ENVIRONMENT }}
           JWT_ALGORITHM: ${{ vars.JWT_ALGORITHM }}
+          FRONTEND_URL: ${{ vars.FRONTEND_URL }}
           IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_SYNC: ${{ secrets.DATABASE_URL_SYNC }}
         run: |
-          for name in AWS_ROLE_TO_ASSUME AWS_REGION ECR_REPOSITORY LAMBDA_FUNCTION_NAME APP_NAME APP_VERSION ENVIRONMENT JWT_ALGORITHM IMAGE_CALLBACK_SECRET; do
+          for name in AWS_ROLE_TO_ASSUME AWS_REGION ECR_REPOSITORY LAMBDA_FUNCTION_NAME APP_NAME APP_VERSION ENVIRONMENT JWT_ALGORITHM FRONTEND_URL IMAGE_CALLBACK_SECRET DATABASE_URL DATABASE_URL_SYNC; do
             if [ -z "${!name}" ]; then
               echo "::error::$name is not configured for aws_dev"
               exit 1
@@ -54,7 +57,10 @@ jobs:
           APP_VERSION: ${{ vars.APP_VERSION }}
           ENVIRONMENT: ${{ vars.ENVIRONMENT }}
           JWT_ALGORITHM: ${{ vars.JWT_ALGORITHM }}
+          FRONTEND_URL: ${{ vars.FRONTEND_URL }}
           IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_SYNC: ${{ secrets.DATABASE_URL_SYNC }}
         run: |
           CURRENT_VARS=$(aws lambda get-function-configuration \
             --function-name ${{ vars.LAMBDA_FUNCTION_NAME }} \
@@ -70,14 +76,20 @@ jobs:
             --arg app_name "$APP_NAME" \
             --arg app_version "$APP_VERSION" \
             --arg environment "$ENVIRONMENT" \
+            --arg frontend_url "$FRONTEND_URL" \
             --arg jwt_algorithm "$JWT_ALGORITHM" \
             --arg image_callback_secret "$IMAGE_CALLBACK_SECRET" \
+            --arg database_url "$DATABASE_URL" \
+            --arg database_url_sync "$DATABASE_URL_SYNC" \
             '{Variables: (. + {
               APP_NAME: $app_name,
               APP_VERSION: $app_version,
               ENVIRONMENT: $environment,
+              FRONTEND_URL: $frontend_url,
               JWT_ALGORITHM: $jwt_algorithm,
-              IMAGE_CALLBACK_SECRET: $image_callback_secret
+              IMAGE_CALLBACK_SECRET: $image_callback_secret,
+              DATABASE_URL: $database_url,
+              DATABASE_URL_SYNC: $database_url_sync
             })}')
 
           aws lambda update-function-configuration \

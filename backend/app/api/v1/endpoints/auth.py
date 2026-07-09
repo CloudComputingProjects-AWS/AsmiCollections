@@ -337,7 +337,7 @@ async def forgot_password(
     await db.commit()
 
     if token and email:
-        await send_password_reset_email(email, token)
+        await send_password_reset_email(email, token, base_url=settings.FRONTEND_URL)
 
     return MessageResponse(
         message="If an account with that email exists, a reset link has been sent."
@@ -357,3 +357,4 @@ async def reset_password(
         return MessageResponse(message="Password reset successfully. Please login with your new password.")
     except PasswordResetError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+
