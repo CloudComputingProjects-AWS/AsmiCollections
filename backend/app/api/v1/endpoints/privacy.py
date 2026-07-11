@@ -38,7 +38,7 @@ from app.schemas.privacy_schemas import (
     DeletionStatusOut,
 )
 from app.services.privacy_service import PrivacyService
-
+from app.core.origin_policy import require_trusted_origin
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/user", tags=["Privacy & Consent"])
@@ -87,7 +87,7 @@ async def get_consents(
         "Update optional consents (marketing_email, marketing_sms, cookie_analytics). "
         "Required consents (terms_of_service, privacy_policy) cannot be revoked. "
         "Each change creates an append-only audit record with IP and user-agent."
-    ),
+    ),dependencies=[Depends(require_trusted_origin)]
 )
 async def update_consents(
     body: ConsentUpdateRequest,
@@ -128,7 +128,7 @@ async def update_consents(
         "If active orders exist, the grace period starts after estimated delivery. "
         "During the grace period, the user can cancel the request. "
         "After the grace period, the account is anonymized permanently."
-    ),
+    ),dependencies=[Depends(require_trusted_origin)]
 )
 async def request_delete_account(
     body: DeleteAccountRequest,
@@ -174,7 +174,7 @@ async def request_delete_account(
     "/cancel-deletion",
     response_model=CancelDeletionOut,
     summary="Cancel account deletion",
-    description="Cancel a pending account deletion during the grace period.",
+    description="Cancel a pending account deletion during the grace period.",dependencies=[Depends(require_trusted_origin)]
 )
 async def cancel_deletion(
     current_user: User = Depends(get_current_user),
@@ -261,7 +261,7 @@ async def export_data(
         "Store cookie consent from the frontend banner. "
         "Essential cookies are always required. "
         "Analytics and marketing cookies are optional."
-    ),
+    ),dependencies=[Depends(require_trusted_origin)]
 )
 async def store_cookie_consent(
     body: CookieConsentRequest,

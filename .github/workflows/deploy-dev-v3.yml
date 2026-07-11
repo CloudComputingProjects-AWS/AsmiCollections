@@ -27,15 +27,27 @@ jobs:
         env:
           AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
           AWS_REGION: ${{ vars.AWS_REGION }}
+          API_GATEWAY_ID: ${{ vars.API_GATEWAY_ID }}
+          API_GATEWAY_STAGE: ${{ vars.API_GATEWAY_STAGE }}
+          EXPECTED_API_THROTTLE_BURST: ${{ vars.EXPECTED_API_THROTTLE_BURST }}
+          EXPECTED_API_THROTTLE_RATE: ${{ vars.EXPECTED_API_THROTTLE_RATE }}
+          CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
           LAMBDA_FUNCTION_NAME: ${{ vars.LAMBDA_FUNCTION_NAME }}
           APP_NAME: ${{ vars.APP_NAME }}
           APP_VERSION: ${{ vars.APP_VERSION }}
           ENVIRONMENT: ${{ vars.ENVIRONMENT }}
           JWT_ALGORITHM: ${{ vars.JWT_ALGORITHM }}
-          IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
+          FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+          IMAGE_CALLBACK_SECRET_PARAM: ${{ vars.IMAGE_CALLBACK_SECRET_PARAM }}
+          DATABASE_URL_PARAM: ${{ vars.DATABASE_URL_PARAM }}
+          DATABASE_URL_SYNC_PARAM: ${{ vars.DATABASE_URL_SYNC_PARAM }}
+          CORS_ORIGINS: ${{ vars.CORS_ORIGINS }}
+          TRUSTED_HOSTS: ${{ vars.TRUSTED_HOSTS }}
+          ENABLE_SECURITY_HEADERS: ${{ vars.ENABLE_SECURITY_HEADERS }}
+          ENABLE_HSTS: ${{ vars.ENABLE_HSTS }}
         run: |
-          for name in AWS_ROLE_TO_ASSUME AWS_REGION ECR_REPOSITORY LAMBDA_FUNCTION_NAME APP_NAME APP_VERSION ENVIRONMENT JWT_ALGORITHM IMAGE_CALLBACK_SECRET; do
+          for name in AWS_ROLE_TO_ASSUME AWS_REGION API_GATEWAY_ID API_GATEWAY_STAGE EXPECTED_API_THROTTLE_BURST EXPECTED_API_THROTTLE_RATE CLOUDFRONT_DISTRIBUTION_ID ECR_REPOSITORY LAMBDA_FUNCTION_NAME APP_NAME APP_VERSION ENVIRONMENT JWT_ALGORITHM FRONTEND_URL IMAGE_CALLBACK_SECRET_PARAM DATABASE_URL_PARAM DATABASE_URL_SYNC_PARAM CORS_ORIGINS TRUSTED_HOSTS ENABLE_SECURITY_HEADERS ENABLE_HSTS; do
             if [ -z "${!name}" ]; then
               echo "::error::$name is not configured for aws_dev"
               exit 1
@@ -48,13 +60,107 @@ jobs:
           role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ vars.AWS_REGION }}
 
+      - name: Validate AWS edge protections
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          API_GATEWAY_ID: ${{ vars.API_GATEWAY_ID }}
+          API_GATEWAY_STAGE: ${{ vars.API_GATEWAY_STAGE }}
+          EXPECTED_API_THROTTLE_BURST: ${{ vars.EXPECTED_API_THROTTLE_BURST }}
+          EXPECTED_API_THROTTLE_RATE: ${{ vars.EXPECTED_API_THROTTLE_RATE }}
+          CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          STAGE_JSON=$(aws apigatewayv2 get-stage \
+            --api-id "$API_GATEWAY_ID" \
+            --stage-name "$API_GATEWAY_STAGE" \
+            --region "$AWS_REGION")
+
+          DEFAULT_BURST=$(echo "$STAGE_JSON" | jq -r '.DefaultRouteSettings.ThrottlingBurstLimit // empty')
+          DEFAULT_RATE=$(echo "$STAGE_JSON" | jq -r '.DefaultRouteSettings.ThrottlingRateLimit // empty')
+          ROUTE_THROTTLE_COUNT=$(echo "$STAGE_JSON" | jq '[.RouteSettings // {} | to_entries[] | select(.value.ThrottlingBurstLimit != null or .value.ThrottlingRateLimit != null)] | length')
+
+          if [ -z "$DEFAULT_BURST" ] && [ -z "$DEFAULT_RATE" ] && [ "$ROUTE_THROTTLE_COUNT" -eq 0 ]; then
+            echo "::error::No API Gateway throttling found on default route or route settings"
+            exit 1
+          fi
+
+          export DEFAULT_BURST DEFAULT_RATE EXPECTED_API_THROTTLE_BURST EXPECTED_API_THROTTLE_RATE
+          python - <<'PY'
+          import os
+          import sys
+
+          burst = os.environ.get("DEFAULT_BURST", "")
+          rate = os.environ.get("DEFAULT_RATE", "")
+          expected_burst = int(os.environ["EXPECTED_API_THROTTLE_BURST"])
+          expected_rate = float(os.environ["EXPECTED_API_THROTTLE_RATE"])
+
+          if burst and int(float(burst)) < expected_burst:
+              sys.exit(f"Default burst throttle too low or unexpected: {burst}")
+
+          if rate and float(rate) < expected_rate:
+              sys.exit(f"Default rate throttle too low or unexpected: {rate}")
+          PY
+
+          DIST_CONFIG=$(aws cloudfront get-distribution-config \
+            --id "$CLOUDFRONT_DISTRIBUTION_ID")
+
+          WEB_ACL_ID=$(echo "$DIST_CONFIG" | jq -r '.DistributionConfig.WebACLId // empty')
+          if [ -z "$WEB_ACL_ID" ]; then
+            echo "::error::No WAF WebACL associated with CloudFront distribution"
+            exit 1
+          fi
+
+          case "$WEB_ACL_ID" in
+            arn:aws:wafv2:*)
+              ;;
+            *)
+              echo "::error::Unexpected WAF WebACL ARN format: $WEB_ACL_ID"
+              exit 1
+              ;;
+          esac
+
+          WEB_ACL_NAME=$(echo "$WEB_ACL_ID" | cut -d: -f6 | cut -d/ -f2)
+          WEB_ACL_UUID=$(echo "$WEB_ACL_ID" | cut -d: -f6 | cut -d/ -f4)
+
+          WAF_ACL=$(aws wafv2 get-web-acl \
+            --name "$WEB_ACL_NAME" \
+            --scope CLOUDFRONT \
+            --id "$WEB_ACL_UUID" \
+            --region us-east-1)
+
+          RATE_RULE_COUNT=$(echo "$WAF_ACL" | jq '[.WebACL.Rules[]? | select(.Statement.RateBasedStatement != null)] | length')
+          BLOCKING_RATE_RULE_COUNT=$(echo "$WAF_ACL" | jq '[.WebACL.Rules[]? | select(.Statement.RateBasedStatement != null and .Action.Block != null)] | length')
+
+          if [ "$RATE_RULE_COUNT" -eq 0 ]; then
+            echo "::error::CloudFront WAF has no top-level rate-based rules"
+            exit 1
+          fi
+
+          if [ "$BLOCKING_RATE_RULE_COUNT" -eq 0 ]; then
+            echo "::error::CloudFront WAF rate-based rule(s) exist, but none are top-level Block actions"
+            exit 1
+          fi
+
+          echo "Verified API Gateway throttling and CloudFront WAF protections"
+
       - name: Sync backend Lambda runtime settings
         env:
           APP_NAME: ${{ vars.APP_NAME }}
           APP_VERSION: ${{ vars.APP_VERSION }}
           ENVIRONMENT: ${{ vars.ENVIRONMENT }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          API_GATEWAY_ID: ${{ vars.API_GATEWAY_ID }}
+          API_GATEWAY_STAGE: ${{ vars.API_GATEWAY_STAGE }}
+          EXPECTED_API_THROTTLE_BURST: ${{ vars.EXPECTED_API_THROTTLE_BURST }}
+          EXPECTED_API_THROTTLE_RATE: ${{ vars.EXPECTED_API_THROTTLE_RATE }}
           JWT_ALGORITHM: ${{ vars.JWT_ALGORITHM }}
-          IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
+          FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+          IMAGE_CALLBACK_SECRET_PARAM: ${{ vars.IMAGE_CALLBACK_SECRET_PARAM }}
+          DATABASE_URL_PARAM: ${{ vars.DATABASE_URL_PARAM }}
+          DATABASE_URL_SYNC_PARAM: ${{ vars.DATABASE_URL_SYNC_PARAM }}
+          CORS_ORIGINS: ${{ vars.CORS_ORIGINS }}
+          TRUSTED_HOSTS: ${{ vars.TRUSTED_HOSTS }}
+          ENABLE_SECURITY_HEADERS: ${{ vars.ENABLE_SECURITY_HEADERS }}
+          ENABLE_HSTS: ${{ vars.ENABLE_HSTS }}
         run: |
           CURRENT_VARS=$(aws lambda get-function-configuration \
             --function-name ${{ vars.LAMBDA_FUNCTION_NAME }} \
@@ -70,14 +176,38 @@ jobs:
             --arg app_name "$APP_NAME" \
             --arg app_version "$APP_VERSION" \
             --arg environment "$ENVIRONMENT" \
+            --arg aws_region "$AWS_REGION" \
+            --arg api_gateway_id "$API_GATEWAY_ID" \
+            --arg api_gateway_stage "$API_GATEWAY_STAGE" \
+            --argjson expected_api_throttle_burst "$EXPECTED_API_THROTTLE_BURST" \
+            --argjson expected_api_throttle_rate "$EXPECTED_API_THROTTLE_RATE" \
+            --arg frontend_url "$FRONTEND_URL" \
             --arg jwt_algorithm "$JWT_ALGORITHM" \
-            --arg image_callback_secret "$IMAGE_CALLBACK_SECRET" \
+            --arg image_callback_secret_param "$IMAGE_CALLBACK_SECRET_PARAM" \
+            --arg database_url_param "$DATABASE_URL_PARAM" \
+            --arg database_url_sync_param "$DATABASE_URL_SYNC_PARAM" \
+            --arg cors_origins "$CORS_ORIGINS" \
+            --arg trusted_hosts "${TRUSTED_HOSTS}" \
+            --arg enable_security_headers "${ENABLE_SECURITY_HEADERS}" \
+            --arg enable_hsts "${ENABLE_HSTS}" \
             '{Variables: (. + {
               APP_NAME: $app_name,
               APP_VERSION: $app_version,
               ENVIRONMENT: $environment,
+              AWS_REGION: $aws_region,
+              API_GATEWAY_ID: $api_gateway_id,
+              API_GATEWAY_STAGE: $api_gateway_stage,
+              EXPECTED_API_THROTTLE_BURST: $expected_api_throttle_burst,
+              EXPECTED_API_THROTTLE_RATE: $expected_api_throttle_rate,
+              FRONTEND_URL: $frontend_url,
               JWT_ALGORITHM: $jwt_algorithm,
-              IMAGE_CALLBACK_SECRET: $image_callback_secret
+              IMAGE_CALLBACK_SECRET_PARAM: $image_callback_secret_param,
+              DATABASE_URL_PARAM: $database_url_param,
+              DATABASE_URL_SYNC_PARAM: $database_url_sync_param,
+              CORS_ORIGINS: $cors_origins,
+              TRUSTED_HOSTS: $trusted_hosts,
+              ENABLE_SECURITY_HEADERS: $enable_security_headers,
+              ENABLE_HSTS: $enable_hsts
             })}')
 
           aws lambda update-function-configuration \

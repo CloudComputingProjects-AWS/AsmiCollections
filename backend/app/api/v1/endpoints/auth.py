@@ -46,6 +46,7 @@ from app.services.email_verification_service import (
 )
 from app.services.password_reset_service import PasswordResetService, PasswordResetError
 from app.utils.email_sender import send_otp_email, send_password_reset_email, send_verification_email
+from app.core.origin_policy import require_trusted_origin
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 settings = get_settings()
@@ -117,7 +118,7 @@ def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie("access_token", path="/", secure=secure, samesite=samesite)
     response.delete_cookie("refresh_token", path="/api/v1/auth", secure=secure, samesite=samesite)
 
-@router.post("/register", response_model=UserResponse, status_code=201)
+@router.post("/register", response_model=UserResponse, status_code=201, dependencies=[Depends(require_trusted_origin)])
 async def register(
     data: UserRegisterRequest,
     request: Request,
@@ -144,7 +145,7 @@ async def register(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-@router.post("/login")
+@router.post("/login", dependencies=[Depends(require_trusted_origin)])
 async def login(
     data: UserLoginRequest,
     response: Response,
@@ -184,7 +185,7 @@ async def login(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-@router.post("/refresh")
+@router.post("/refresh", dependencies=[Depends(require_trusted_origin)])
 async def refresh_token_endpoint(
     request: Request,
     response: Response,
@@ -218,7 +219,7 @@ async def refresh_token_endpoint(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-@router.post("/logout", response_model=MessageResponse)
+@router.post("/logout", response_model=MessageResponse, dependencies=[Depends(require_trusted_origin)])
 async def logout(
     request: Request,
     response: Response,
@@ -261,7 +262,7 @@ async def get_me(user: User = Depends(get_current_user)):
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Email Verification (OTP) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
-@router.post("/verify-email", response_model=MessageResponse)
+@router.post("/verify-email", response_model=MessageResponse, dependencies=[Depends(require_trusted_origin)])
 async def verify_email_otp(
     data: OTPVerifyRequest,
     db: AsyncSession = Depends(get_db),
@@ -276,7 +277,7 @@ async def verify_email_otp(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-@router.post("/verify-email-token", response_model=MessageResponse)
+@router.post("/verify-email-token", response_model=MessageResponse, dependencies=[Depends(require_trusted_origin)])
 async def verify_email_token(
     data: EmailVerifyRequest,
     db: AsyncSession = Depends(get_db),
@@ -291,7 +292,7 @@ async def verify_email_token(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-@router.post("/resend-otp", response_model=MessageResponse)
+@router.post("/resend-otp", response_model=MessageResponse,dependencies=[Depends(require_trusted_origin)])
 async def resend_otp(
     data: ResendOTPRequest,
     db: AsyncSession = Depends(get_db),
@@ -307,7 +308,7 @@ async def resend_otp(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-@router.post("/resend-verification", response_model=MessageResponse)
+@router.post("/resend-verification", response_model=MessageResponse, dependencies=[Depends(require_trusted_origin)])
 async def resend_verification(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -326,7 +327,7 @@ async def resend_verification(
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Forgot / Reset Password â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
-@router.post("/forgot-password", response_model=MessageResponse)
+@router.post("/forgot-password", response_model=MessageResponse, dependencies=[Depends(require_trusted_origin)])
 async def forgot_password(
     data: ForgotPasswordRequest,
     db: AsyncSession = Depends(get_db),
@@ -337,14 +338,14 @@ async def forgot_password(
     await db.commit()
 
     if token and email:
-        await send_password_reset_email(email, token)
+        await send_password_reset_email(email, token, base_url=settings.FRONTEND_URL)
 
     return MessageResponse(
         message="If an account with that email exists, a reset link has been sent."
     )
 
 
-@router.post("/reset-password", response_model=MessageResponse)
+@router.post("/reset-password", response_model=MessageResponse, dependencies=[Depends(require_trusted_origin)])
 async def reset_password(
     data: ResetPasswordRequest,
     db: AsyncSession = Depends(get_db),
@@ -357,3 +358,4 @@ async def reset_password(
         return MessageResponse(message="Password reset successfully. Please login with your new password.")
     except PasswordResetError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+

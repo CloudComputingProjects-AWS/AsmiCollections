@@ -31,7 +31,7 @@ from app.core.security import create_access_token, create_refresh_token, hash_to
 from app.middleware.auth import get_current_user
 from app.models.models import RefreshToken, User
 from app.services.totp_service import TwoFactorError, TwoFactorService
-
+from app.core.origin_policy import require_trusted_origin
 router = APIRouter(prefix="/auth/2fa", tags=["Two-Factor Authentication"])
 settings = get_settings()
 
@@ -91,7 +91,7 @@ def _get_cookie_security_params() -> tuple[str, bool]:
 # ENDPOINTS
 # ────────────────────────────────────────────────────────────────
 
-@router.post("/setup", response_model=TOTPSetupResponse)
+@router.post("/setup", response_model=TOTPSetupResponse, dependencies=[Depends(require_trusted_origin)])
 async def setup_2fa(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -113,7 +113,7 @@ async def setup_2fa(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-@router.post("/verify-setup", response_model=MessageResponse)
+@router.post("/verify-setup", response_model=MessageResponse, dependencies=[Depends(require_trusted_origin)])
 async def verify_setup(
     data: TOTPCodeRequest,
     user: User = Depends(get_current_user),
@@ -130,7 +130,7 @@ async def verify_setup(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-@router.post("/validate")
+@router.post("/validate", dependencies=[Depends(require_trusted_origin)])
 async def validate_totp_login(
     data: TOTPLoginRequest,
     db: AsyncSession = Depends(get_db),
@@ -202,7 +202,7 @@ async def validate_totp_login(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-@router.post("/disable", response_model=MessageResponse)
+@router.post("/disable", response_model=MessageResponse,dependencies=[Depends(require_trusted_origin)])
 async def disable_2fa(
     data: TOTPCodeRequest,
     user: User = Depends(get_current_user),

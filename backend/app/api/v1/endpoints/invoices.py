@@ -35,7 +35,7 @@ from app.schemas.invoice_schemas import (
     InvoiceSummaryResponse,
 )
 from app.services.invoice_service import InvoiceService, InvoiceServiceError
-
+from app.core.origin_policy import require_trusted_origin
 
 def _generate_presigned_download_url(s3_url: str, filename: str, expires_in: int = 300) -> str:
     """
@@ -249,7 +249,7 @@ async def admin_download_invoice(
     raise HTTPException(status_code=404, detail="PDF file not found")
 
 
-@router.post("/admin/invoices/{invoice_id}/regenerate")
+@router.post("/admin/invoices/{invoice_id}/regenerate",dependencies=[Depends(require_trusted_origin)])
 async def regenerate_invoice_pdf(
     invoice_id: UUID,
     user: User = Depends(require_role("finance_manager", "admin")),

@@ -29,7 +29,7 @@ from app.services.cart_coupon_service import (
     CartService,
     CouponService,
 )
-
+from app.core.origin_policy import require_trusted_origin
 # Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 # CART ROUTER (auth required)
 # Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
@@ -51,7 +51,7 @@ async def get_cart(
     return await service.get_cart(user.id)
 
 
-@cart_router.post("/add", response_model=CartResponse)
+@cart_router.post("/add", response_model=CartResponse,dependencies=[Depends(require_trusted_origin)])
 async def add_to_cart(
     data: CartAddRequest,
     db: AsyncSession = Depends(get_db),
@@ -67,7 +67,7 @@ async def add_to_cart(
         _handle_error(e)
 
 
-@cart_router.put("/{variant_id}", response_model=CartResponse)
+@cart_router.put("/{variant_id}", response_model=CartResponse,dependencies=[Depends(require_trusted_origin)])
 async def update_cart_item(
     variant_id: UUID,
     data: CartUpdateRequest,
@@ -84,7 +84,7 @@ async def update_cart_item(
         _handle_error(e)
 
 
-@cart_router.delete("/{variant_id}", response_model=CartResponse)
+@cart_router.delete("/{variant_id}", response_model=CartResponse,dependencies=[Depends(require_trusted_origin)])
 async def remove_cart_item(
     variant_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -100,7 +100,7 @@ async def remove_cart_item(
         _handle_error(e)
 
 
-@cart_router.delete("", response_model=MessageResponse)
+@cart_router.delete("", response_model=MessageResponse,dependencies=[Depends(require_trusted_origin)])
 async def clear_cart(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -112,7 +112,7 @@ async def clear_cart(
     return MessageResponse(message="Cart cleared.")
 
 
-@cart_router.post("/merge", response_model=CartResponse)
+@cart_router.post("/merge", response_model=CartResponse,dependencies=[Depends(require_trusted_origin)])
 async def merge_guest_cart(
     data: CartMergeRequest,
     db: AsyncSession = Depends(get_db),
@@ -143,7 +143,7 @@ async def get_cart_count(
 coupon_router = APIRouter(prefix="/coupons", tags=["Coupons"])
 
 
-@coupon_router.post("/apply", response_model=CouponApplyResult)
+@coupon_router.post("/apply", response_model=CouponApplyResult,dependencies=[Depends(require_trusted_origin)])
 async def apply_coupon(
     data: ApplyCouponRequest,
     db: AsyncSession = Depends(get_db),
@@ -187,7 +187,7 @@ async def list_coupons(
     return await service.list_coupons(active_only)
 
 
-@admin_coupon_router.post("", response_model=CouponResponse, status_code=201)
+@admin_coupon_router.post("", response_model=CouponResponse, status_code=201, dependencies=[Depends(require_trusted_origin)])
 async def create_coupon(
     data: CouponCreate,
     db: AsyncSession = Depends(get_db),
@@ -203,7 +203,7 @@ async def create_coupon(
         _handle_error(e)
 
 
-@admin_coupon_router.put("/{coupon_id}", response_model=CouponResponse)
+@admin_coupon_router.put("/{coupon_id}", response_model=CouponResponse, dependencies=[Depends(require_trusted_origin)])
 async def update_coupon(
     coupon_id: UUID,
     data: CouponUpdate,
@@ -220,7 +220,7 @@ async def update_coupon(
         _handle_error(e)
 
 
-@admin_coupon_router.delete("/{coupon_id}", response_model=MessageResponse)
+@admin_coupon_router.delete("/{coupon_id}", response_model=MessageResponse, dependencies=[Depends(require_trusted_origin)])
 async def delete_coupon(
     coupon_id: UUID,
     db: AsyncSession = Depends(get_db),

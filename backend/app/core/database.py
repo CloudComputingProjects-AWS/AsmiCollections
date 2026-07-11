@@ -55,7 +55,7 @@ def _build_engine():
     if env == "development":
         # Local machine — persistent process, use connection pool, no SSL
         return create_async_engine(
-            settings.DATABASE_URL,
+            settings.resolved_database_url,
             poolclass=AsyncAdaptedQueuePool,
             pool_size=settings.DB_POOL_SIZE,
             max_overflow=settings.DB_MAX_OVERFLOW,
@@ -68,7 +68,7 @@ def _build_engine():
         # NullPool: each request opens and closes its own connection.
         # SSL required for both Neon and RDS.
         return create_async_engine(
-            settings.DATABASE_URL,
+            settings.resolved_database_url,
             poolclass=NullPool,
             echo=settings.DB_ECHO,
             connect_args={"ssl": "require"},

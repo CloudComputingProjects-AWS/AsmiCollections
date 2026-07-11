@@ -12,17 +12,19 @@ All other settings verified active via full codebase search.
 from functools import lru_cache
 from pydantic_settings import BaseSettings
 
-
 class Settings(BaseSettings):
     # ────────────────── Application ──────────────────
     APP_NAME: str = ""
     APP_VERSION: str = ""
     DEBUG: bool = False
     ENVIRONMENT: str = ""
+    FRONTEND_URL: str = "http://localhost:3000"
 
     # ────────────────── Database (PostgreSQL) ──────────────────
     DATABASE_URL: str = ""
     DATABASE_URL_SYNC: str = ""
+    DATABASE_URL_PARAM: str = ""
+    DATABASE_URL_SYNC_PARAM: str = ""
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
     DB_ECHO: bool = False
@@ -34,15 +36,14 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
       # ────────────────── Auth Image callback ──────────────────
-    IMAGE_CALLBACK_SECRET: str = ""
+    IMAGE_CALLBACK_SECRET: str = ""  
+    IMAGE_CALLBACK_SECRET_PARAM: str = ""
 
     # ────────────────── Password Hashing ──────────────────
     BCRYPT_ROUNDS: int = 12
 
     # ────────────────── AWS ──────────────────
-    # AWS_REGION: auto-injected by Lambda runtime
-    # S3_BUCKET_NAME: defined in Lambda env vars
-    # CLOUDFRONT_DOMAIN: read via os.getenv() in pdf_generator.py
+    AWS_REGION: str = ""
 
     # ────────────────── Payment Gateways ──────────────────
     RAZORPAY_KEY_ID: str = ""
@@ -83,7 +84,7 @@ class Settings(BaseSettings):
     # RATE_LIMIT_AUTH: int = 5        # requests per minute on auth endpoints
     # RATE_LIMIT_API: int = 300       # requests per minute on general API
     # AWS edge/API protection verification
-    AWS_REGION: str = ""
+    
     API_GATEWAY_ID: str = ""
     API_GATEWAY_STAGE: str = ""
     EXPECTED_API_THROTTLE_BURST: int = 10
@@ -98,6 +99,56 @@ class Settings(BaseSettings):
     ]
     ENABLE_SECURITY_HEADERS: bool = True
     ENABLE_HSTS: bool = False
+    @property
+    def aws_region_effective(self) -> str:
+        return self.AWS_REGION or "ap-south-1"
+    @staticmethod
+    @lru_cache()
+    def _get_ssm_parameter(parameter_name: str, region_name: str) -> str:
+        import boto3
+
+        client = boto3.client("ssm", region_name=region_name)
+        response = client.get_parameter(
+            Name=parameter_name,
+            WithDecryption=True,
+        )
+        return response["Parameter"]["Value"]
+
+    def _resolve_secret(self, direct_value: str, parameter_name: str, setting_name: str) -> str:
+        if direct_value:
+            return direct_value
+
+        if parameter_name:
+            return self._get_ssm_parameter(parameter_name, self.aws_region_effective)
+
+        raise ValueError(
+            f"{setting_name} is not configured. "
+            f"Set either {setting_name} or its corresponding _PARAM setting."
+        )
+
+    @property
+    def resolved_database_url(self) -> str:
+        return self._resolve_secret(
+            self.DATABASE_URL,
+            self.DATABASE_URL_PARAM,
+            "DATABASE_URL",
+        )
+
+    @property
+    def resolved_database_url_sync(self) -> str:
+        return self._resolve_secret(
+            self.DATABASE_URL_SYNC,
+            self.DATABASE_URL_SYNC_PARAM,
+            "DATABASE_URL_SYNC",
+        )
+
+    @property
+    def resolved_image_callback_secret(self) -> str:
+        return self._resolve_secret(
+            self.IMAGE_CALLBACK_SECRET,
+            self.IMAGE_CALLBACK_SECRET_PARAM,
+            "IMAGE_CALLBACK_SECRET",
+        )
     class Config:
         env_file = ".env"
         case_sensitive = True
@@ -107,3 +158,5 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+
+
