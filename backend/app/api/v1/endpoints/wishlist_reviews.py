@@ -24,7 +24,7 @@ from app.services.wishlist_review_service import (
     ReviewService,
     ReviewError,
 )
-
+from app.core.origin_policy import require_trusted_origin
 # Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 # REVIEWS ROUTER (public read, auth write)
 # Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
@@ -48,7 +48,7 @@ async def list_product_reviews(
     return await service.list_reviews(product_id, page, page_size)
 
 
-@review_router.post("", response_model=ReviewResponse, status_code=201)
+@review_router.post("", response_model=ReviewResponse, status_code=201, dependencies=[Depends(require_trusted_origin)])
 async def create_review(
     data: ReviewCreate,
     db: AsyncSession = Depends(get_db),
@@ -64,7 +64,7 @@ async def create_review(
         _handle_error(e)
 
 
-@review_router.put("/{review_id}", response_model=ReviewResponse)
+@review_router.put("/{review_id}", response_model=ReviewResponse, dependencies=[Depends(require_trusted_origin)])
 async def update_review(
     review_id: UUID,
     data: ReviewUpdate,
@@ -81,7 +81,7 @@ async def update_review(
         _handle_error(e)
 
 
-@review_router.delete("/{review_id}", response_model=MessageResponse)
+@review_router.delete("/{review_id}", response_model=MessageResponse, dependencies=[Depends(require_trusted_origin)])
 async def delete_review(
     review_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -117,7 +117,7 @@ async def list_pending_reviews(
     return await service.admin_list_pending(page, page_size)
 
 
-@admin_review_router.post("/{review_id}/moderate")
+@admin_review_router.post("/{review_id}/moderate", dependencies=[Depends(require_trusted_origin)])
 async def moderate_review(
     review_id: UUID,
     data: AdminReviewAction,

@@ -53,7 +53,7 @@ from app.services.admin_dashboard_service import (
     AdminDashboardService,
     DashboardServiceError,
 )
-
+from app.core.origin_policy import require_trusted_origin
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # DASHBOARD
@@ -245,7 +245,7 @@ async def get_audit_logs(
 
 
 
-@audit_router.post("/archive")
+@audit_router.post("/archive", dependencies=[Depends(require_trusted_origin)])
 async def archive_old_logs(
     months: int = Query(12, ge=1, le=60, description="Archive logs older than N months"),
     confirm: bool = Query(False, description="Set to true to actually delete after export"),
@@ -368,7 +368,7 @@ async def get_user_detail(
     return UserListItem.model_validate(target_user)
 
 
-@user_mgmt_router.put("/{user_id}/role", response_model=UserListItem)
+@user_mgmt_router.put("/{user_id}/role", response_model=UserListItem,dependencies=[Depends(require_trusted_origin)])
 async def update_user_role(
     user_id: UUID,
     data: UserRoleUpdate,
@@ -385,7 +385,7 @@ async def update_user_role(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-@user_mgmt_router.put("/{user_id}/status", response_model=UserListItem)
+@user_mgmt_router.put("/{user_id}/status", response_model=UserListItem,dependencies=[Depends(require_trusted_origin)])
 async def update_user_status(
     user_id: UUID,
     data: UserStatusUpdate,

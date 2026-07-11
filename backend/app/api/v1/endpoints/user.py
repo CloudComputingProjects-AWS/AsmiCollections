@@ -20,7 +20,7 @@ from app.schemas.auth import (
 )
 from app.schemas.order import AddressCreate, AddressResponse
 from app.core.security import hash_password, verify_password
-
+from app.core.origin_policy import require_trusted_origin
 router = APIRouter(prefix="/user", tags=["User Profile"])
 
 
@@ -29,7 +29,7 @@ async def get_profile(user: User = Depends(get_current_user)):
     return user
 
 
-@router.put("/profile", response_model=UserResponse)
+@router.put("/profile", response_model=UserResponse,dependencies=[Depends(require_trusted_origin)])
 async def update_profile(
     data: UserProfileUpdate,
     user: User = Depends(get_current_user),
@@ -47,7 +47,7 @@ async def update_profile(
     return user
 
 
-@router.put("/change-password", response_model=MessageResponse)
+@router.put("/change-password", response_model=MessageResponse,dependencies=[Depends(require_trusted_origin)])
 async def change_password(
     data: ChangePasswordRequest,
     user: User = Depends(get_current_user),
@@ -83,7 +83,7 @@ async def list_addresses(
     return result.scalars().all()
 
 
-@router.post("/addresses", response_model=AddressResponse, status_code=201)
+@router.post("/addresses", response_model=AddressResponse, status_code=201,dependencies=[Depends(require_trusted_origin)])
 async def add_address(
     data: AddressCreate,
     user: User = Depends(get_current_user),
@@ -113,7 +113,7 @@ async def add_address(
     return address
 
 
-@router.put("/addresses/{address_id}", response_model=AddressResponse)
+@router.put("/addresses/{address_id}", response_model=AddressResponse,dependencies=[Depends(require_trusted_origin)])
 async def update_address(
     address_id: UUID,
     data: AddressUpdate,
@@ -148,7 +148,7 @@ async def update_address(
     return address
 
 
-@router.delete("/addresses/{address_id}", response_model=MessageResponse)
+@router.delete("/addresses/{address_id}", response_model=MessageResponse,dependencies=[Depends(require_trusted_origin)])
 async def delete_address(
     address_id: UUID,
     user: User = Depends(get_current_user),

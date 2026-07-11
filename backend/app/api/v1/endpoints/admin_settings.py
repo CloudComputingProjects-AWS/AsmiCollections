@@ -17,7 +17,7 @@ from app.services.store_settings_service import (
     StoreSettingsService,
     SettingsServiceError,
 )
-
+from app.core.origin_policy import require_trusted_origin
 router = APIRouter(
     prefix="/admin/settings",
     tags=["Admin ‚Store Settings"],
@@ -96,7 +96,7 @@ async def get_merchant_upi(
 @router.put(
     "/upi",
     response_model=MerchantUpiUpdateResponse,
-    summary="Update merchant UPI VPA",
+    summary="Update merchant UPI VPA",dependencies=[Depends(require_trusted_origin)]
 )
 async def update_merchant_upi(
     data: MerchantUpiUpdateRequest,
@@ -124,7 +124,7 @@ async def update_merchant_upi(
 @router.get(
     "/upi/audit",
     response_model=list[UpiAuditEntry],
-    summary="Get merchant UPI change history",
+    summary="Get merchant UPI change history"
 )
 async def get_upi_audit_trail(
     limit: int = 5,
@@ -171,7 +171,7 @@ async def get_shipping_config(
 @router.put(
     "/shipping",
     response_model=ShippingConfigUpdateResponse,
-    summary="Update shipping configuration",
+    summary="Update shipping configuration",dependencies=[Depends(require_trusted_origin)]
 )
 async def update_shipping_config(
     data: ShippingConfigUpdateRequest,
@@ -220,7 +220,7 @@ async def get_seller_config(db: AsyncSession = Depends(get_db), user: User = Dep
     service = StoreSettingsService(db)
     return await service.get_seller_config()
 
-@router.put("/seller", response_model=SellerConfigUpdateResponse, summary="Update seller/business configuration")
+@router.put("/seller", response_model=SellerConfigUpdateResponse, summary="Update seller/business configuration",dependencies=[Depends(require_trusted_origin)])
 async def update_seller_config(data: SellerConfigUpdateRequest, db: AsyncSession = Depends(get_db), user: User = Depends(admin_only)):
     service = StoreSettingsService(db)
     try:
@@ -256,7 +256,7 @@ async def get_contact_config(db: AsyncSession = Depends(get_db), user: User = De
     return ContactConfigResponse(**data)
 
 
-@router.put("/contact", response_model=ContactConfigUpdateResponse, summary="Update store contact configuration")
+@router.put("/contact", response_model=ContactConfigUpdateResponse, summary="Update store contact configuration",dependencies=[Depends(require_trusted_origin)])
 async def update_contact_config(request: ContactConfigUpdateRequest, db: AsyncSession = Depends(get_db), user: User = Depends(admin_only)):
     service = StoreSettingsService(db)
     try:

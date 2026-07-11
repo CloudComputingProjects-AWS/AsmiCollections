@@ -23,6 +23,7 @@ def _sign(body: bytes, timestamp: str, secret: str = TEST_SECRET) -> str:
 
 def test_valid_signature_is_accepted(monkeypatch):
     monkeypatch.setattr(admin_images.settings, "IMAGE_CALLBACK_SECRET", TEST_SECRET, raising=False)
+    monkeypatch.setattr(admin_images.settings, "IMAGE_CALLBACK_SECRET_PARAM", "", raising=False)
 
     body = b'{"image_id":"123","status":"completed"}'
     timestamp = str(int(time.time()))
@@ -80,6 +81,7 @@ def test_expired_timestamp_is_rejected(monkeypatch):
 
 def test_missing_secret_is_server_error(monkeypatch):
     monkeypatch.setattr(admin_images.settings, "IMAGE_CALLBACK_SECRET", "", raising=False)
+    monkeypatch.setattr(admin_images.settings, "IMAGE_CALLBACK_SECRET_PARAM", "", raising=False)
 
     with pytest.raises(HTTPException) as exc:
         admin_images._verify_image_callback_signature(

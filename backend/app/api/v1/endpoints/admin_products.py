@@ -43,7 +43,7 @@ from app.schemas.product import (
     VariantUpdate,
 )
 from app.services.product_service import ProductService, ProductServiceError
-
+from app.core.origin_policy import require_trusted_origin
 router = APIRouter(prefix="/admin", tags=["Admin - Product Management"])
 
 # Role dependencies
@@ -85,7 +85,7 @@ async def list_attributes(
     return await service.list_attribute_definitions()
 
 
-@router.post("/attribute-definitions", response_model=AttributeDefinitionResponse, status_code=201)
+@router.post("/attribute-definitions", response_model=AttributeDefinitionResponse, status_code=201,dependencies=[Depends(require_trusted_origin)])
 async def create_attribute(
     data: AttributeDefinitionCreate,
     db: AsyncSession = Depends(get_db),
@@ -101,7 +101,7 @@ async def create_attribute(
         _handle_error(e)
 
 
-@router.put("/attribute-definitions/{attr_id}", response_model=AttributeDefinitionResponse)
+@router.put("/attribute-definitions/{attr_id}", response_model=AttributeDefinitionResponse,dependencies=[Depends(require_trusted_origin)])
 async def update_attribute(
     attr_id: UUID,
     data: AttributeDefinitionUpdate,
@@ -118,7 +118,7 @@ async def update_attribute(
         _handle_error(e)
 
 
-@router.delete("/attribute-definitions/{attr_id}", response_model=MessageResponse)
+@router.delete("/attribute-definitions/{attr_id}", response_model=MessageResponse,dependencies=[Depends(require_trusted_origin)])
 async def delete_attribute(
     attr_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -164,7 +164,7 @@ async def get_category(
         _handle_error(e)
 
 
-@router.post("/categories", response_model=CategoryResponse, status_code=201)
+@router.post("/categories", response_model=CategoryResponse, status_code=201,dependencies=[Depends(require_trusted_origin)])
 async def create_category(
     data: CategoryCreate,
     db: AsyncSession = Depends(get_db),
@@ -179,7 +179,7 @@ async def create_category(
         _handle_error(e)
 
 
-@router.put("/categories/{category_id}", response_model=CategoryResponse)
+@router.put("/categories/{category_id}", response_model=CategoryResponse,dependencies=[Depends(require_trusted_origin)])
 async def update_category(
     category_id: UUID,
     data: CategoryUpdate,
@@ -195,7 +195,7 @@ async def update_category(
         _handle_error(e)
 
 
-@router.delete("/categories/{category_id}", response_model=MessageResponse)
+@router.delete("/categories/{category_id}", response_model=MessageResponse,dependencies=[Depends(require_trusted_origin)])
 async def delete_category(
     category_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -259,7 +259,7 @@ async def get_product(
         _handle_error(e)
 
 
-@router.post("/products", response_model=ProductResponse, status_code=201)
+@router.post("/products", response_model=ProductResponse, status_code=201,dependencies=[Depends(require_trusted_origin)])
 async def create_product(
     data: ProductCreate,
     db: AsyncSession = Depends(get_db),
@@ -275,7 +275,7 @@ async def create_product(
         _handle_error(e)
 
 
-@router.put("/products/{product_id}", response_model=ProductResponse)
+@router.put("/products/{product_id}", response_model=ProductResponse,dependencies=[Depends(require_trusted_origin)])
 async def update_product(
     product_id: UUID,
     data: ProductUpdate,
@@ -291,7 +291,7 @@ async def update_product(
         _handle_error(e)
 
 
-@router.delete("/products/{product_id}", response_model=MessageResponse)
+@router.delete("/products/{product_id}", response_model=MessageResponse,dependencies=[Depends(require_trusted_origin)])
 async def delete_product(
     product_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -311,7 +311,7 @@ async def delete_product(
 # PRODUCT VARIANTS
 # ════════════════════════════════════════════════
 
-@router.post("/variants", response_model=ProductVariantResponse, status_code=201)
+@router.post("/variants", response_model=ProductVariantResponse, status_code=201,dependencies=[Depends(require_trusted_origin)])
 async def create_variant(
     data: VariantCreate,
     db: AsyncSession = Depends(get_db),
@@ -326,7 +326,7 @@ async def create_variant(
         _handle_error(e)
 
 
-@router.put("/variants/{variant_id}", response_model=ProductVariantResponse)
+@router.put("/variants/{variant_id}", response_model=ProductVariantResponse,dependencies=[Depends(require_trusted_origin)])
 async def update_variant(
     variant_id: UUID,
     data: VariantUpdate,
@@ -342,7 +342,7 @@ async def update_variant(
         _handle_error(e)
 
 
-@router.delete("/variants/{variant_id}", response_model=MessageResponse)
+@router.delete("/variants/{variant_id}", response_model=MessageResponse,dependencies=[Depends(require_trusted_origin)])
 async def delete_variant(
     variant_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -381,7 +381,7 @@ async def list_inventory(
     return _make_paginated(items=items, total=total, page=page, page_size=page_size)
 
 
-@router.put("/inventory/{variant_id}", response_model=ProductVariantResponse)
+@router.put("/inventory/{variant_id}", response_model=ProductVariantResponse,dependencies=[Depends(require_trusted_origin)])
 async def update_inventory(
     variant_id: UUID,
     data: InventoryUpdateRequest,
@@ -398,7 +398,7 @@ async def update_inventory(
         _handle_error(e)
 
 
-@router.put("/inventory/bulk", response_model=MessageResponse)
+@router.put("/inventory/bulk", response_model=MessageResponse,dependencies=[Depends(require_trusted_origin)])
 async def bulk_update_inventory(
     data: InventoryBulkUpdateRequest,
     db: AsyncSession = Depends(get_db),
@@ -425,7 +425,7 @@ async def get_low_stock(
     return await service.get_low_stock_variants(threshold)
 
 
-@router.post("/inventory/bulk-update", response_model=MessageResponse)
+@router.post("/inventory/bulk-update", response_model=MessageResponse,dependencies=[Depends(require_trusted_origin)])
 async def bulk_update_inventory_alias(
     data: InventoryBulkUpdateRequest,
     db: AsyncSession = Depends(get_db),
@@ -450,7 +450,7 @@ async def list_size_guides(
     return await service.list_size_guides(category_id)
 
 
-@router.post("/size-guides", response_model=SizeGuideResponse, status_code=201)
+@router.post("/size-guides", response_model=SizeGuideResponse, status_code=201,dependencies=[Depends(require_trusted_origin)])
 async def create_size_guide(
     data: SizeGuideCreate,
     db: AsyncSession = Depends(get_db),
@@ -465,7 +465,7 @@ async def create_size_guide(
         _handle_error(e)
 
 
-@router.delete("/size-guides/{guide_id}", response_model=MessageResponse)
+@router.delete("/size-guides/{guide_id}", response_model=MessageResponse,dependencies=[Depends(require_trusted_origin)])
 async def delete_size_guide(
     guide_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -484,7 +484,7 @@ async def delete_size_guide(
 # BULK CSV UPLOAD
 # ════════════════════════════════════════════════
 
-@router.post("/products/bulk-upload")
+@router.post("/products/bulk-upload",dependencies=[Depends(require_trusted_origin)])
 async def bulk_upload_products(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -530,7 +530,7 @@ async def bulk_upload_products(
 @router.post(
     "/products/bulk",
     response_model=BulkProductCreateResponse,
-    summary="Bulk create products across multiple categories",
+    summary="Bulk create products across multiple categories",dependencies=[Depends(require_trusted_origin)]
 )
 async def bulk_create_products(
     data: BulkProductCreateRequest,
@@ -550,7 +550,7 @@ async def bulk_create_products(
 @router.post(
     "/products/{product_id}/duplicate",
     response_model=ProductDuplicateResponse,
-    summary="Duplicate product to another category with size mapping",
+    summary="Duplicate product to another category with size mapping",dependencies=[Depends(require_trusted_origin)]
 )
 async def duplicate_product(
     product_id: UUID,
@@ -580,7 +580,7 @@ async def duplicate_product(
 @router.get(
     "/size-mappings",
     response_model=list[SizeMappingResponse],
-    summary="Get all size mapping configurations",
+    summary="Get all size mapping configurations"
 )
 async def get_size_mappings(
     user: User = Depends(product_mgr),

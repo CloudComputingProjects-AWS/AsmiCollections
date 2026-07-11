@@ -20,7 +20,7 @@ from app.schemas.order import (
 from app.schemas.product import PaginatedResponse
 from app.services.order_service import OrderService, OrderServiceError
 from sqlalchemy import select
-
+from app.core.origin_policy import require_trusted_origin
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # ADDRESS ROUTER
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -37,7 +37,7 @@ async def list_addresses(db: AsyncSession = Depends(get_db), user: User = Depend
     return list(result.scalars().all())
 
 
-@address_router.post("", response_model=AddressResponse, status_code=201)
+@address_router.post("", response_model=AddressResponse, status_code=201, dependencies=[Depends(require_trusted_origin)])
 async def create_address(data: AddressCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     addr = UserAddress(user_id=user.id, **data.model_dump())
     db.add(addr)
@@ -46,7 +46,7 @@ async def create_address(data: AddressCreate, db: AsyncSession = Depends(get_db)
     return addr
 
 
-@address_router.put("/{address_id}", response_model=AddressResponse)
+@address_router.put("/{address_id}", response_model=AddressResponse, dependencies=[Depends(require_trusted_origin)])
 async def update_address(address_id: UUID, data: AddressCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(UserAddress).where(UserAddress.id == address_id, UserAddress.user_id == user.id, UserAddress.deleted_at.is_(None)))
     addr = result.scalar_one_or_none()
@@ -58,7 +58,7 @@ async def update_address(address_id: UUID, data: AddressCreate, db: AsyncSession
     return addr
 
 
-@address_router.delete("/{address_id}", response_model=MessageResponse)
+@address_router.delete("/{address_id}", response_model=MessageResponse, dependencies=[Depends(require_trusted_origin)])
 async def delete_address(address_id: UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(UserAddress).where(UserAddress.id == address_id, UserAddress.user_id == user.id, UserAddress.deleted_at.is_(None)))
     addr = result.scalar_one_or_none()
@@ -76,7 +76,7 @@ async def delete_address(address_id: UUID, db: AsyncSession = Depends(get_db), u
 checkout_router = APIRouter(prefix="/checkout", tags=["Checkout"])
 
 
-@checkout_router.post("/summary", response_model=OrderSummaryResponse)
+@checkout_router.post("/summary", response_model=OrderSummaryResponse, dependencies=[Depends(require_trusted_origin)])
 async def get_order_summary(data: CheckoutRequest, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Pre-checkout order summary with full tax breakdown."""
     service = OrderService(db)
@@ -86,7 +86,7 @@ async def get_order_summary(data: CheckoutRequest, db: AsyncSession = Depends(ge
         _handle(e)
 
 
-@checkout_router.post("/place-order", response_model=OrderResponse)
+@checkout_router.post("/place-order", response_model=OrderResponse, dependencies=[Depends(require_trusted_origin)])
 async def place_order(data: CheckoutRequest, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """
     Place order: validate cart, lock stock, reserve inventory,
@@ -139,7 +139,7 @@ async def get_order_timeline(order_id: UUID, db: AsyncSession = Depends(get_db),
         _handle(e)
 
 
-@order_router.post("/{order_id}/cancel", response_model=OrderResponse)
+@order_router.post("/{order_id}/cancel", response_model=OrderResponse, dependencies=[Depends(require_trusted_origin)])
 async def cancel_order(order_id: UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Cancel order (only if placed/confirmed/processing)."""
     service = OrderService(db)
@@ -181,7 +181,7 @@ async def admin_get_order(order_id: UUID, db: AsyncSession = Depends(get_db), us
         _handle(e)
 
 
-@admin_order_router.put("/{order_id}/transition", response_model=OrderResponse)
+@admin_order_router.put("/{order_id}/transition", response_model=OrderResponse, dependencies=[Depends(require_trusted_origin)])
 async def admin_transition_order(order_id: UUID, data: OrderTransitionRequest,
     db: AsyncSession = Depends(get_db), user: User = Depends(order_mgr)):
     """State machine enforced status transition."""

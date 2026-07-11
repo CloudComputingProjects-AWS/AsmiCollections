@@ -30,7 +30,7 @@ from app.schemas.image import (
 from app.schemas.product import ProductImageResponse
 from app.services.image_service import ImageService, ImageServiceError
 from app.core.config import get_settings
-
+from app.core.origin_policy import require_trusted_origin
 router = APIRouter(prefix="/admin/images", tags=["Admin â€” Image Pipeline"])
 
 product_mgr = require_role("product_manager", "admin")
@@ -44,7 +44,7 @@ def _handle_error(e: ImageServiceError):
 @router.post(
     "/upload/{product_id}",
     response_model=PresignedUploadResponse,
-    status_code=201,
+    status_code=201,dependencies=[Depends(require_trusted_origin)]
 )
 async def get_upload_url(
     product_id: UUID,
@@ -78,7 +78,9 @@ async def get_upload_url(
 settings = get_settings()
 
 def _verify_image_callback_signature(request_body: bytes, timestamp: str | None, signature: str | None) -> None:
-    if not settings.IMAGE_CALLBACK_SECRET:
+    callback_secret = settings.resolved_image_callback_secret
+
+    if not callback_secret:
         raise HTTPException(status_code=500, detail="Image callback secret not configured")
 
     if not timestamp or not signature:
@@ -96,7 +98,7 @@ def _verify_image_callback_signature(request_body: bytes, timestamp: str | None,
     signed_payload = timestamp.encode("utf-8") + b"." + request_body
 
     expected = hmac.new(
-        settings.IMAGE_CALLBACK_SECRET.encode("utf-8"),
+        callback_secret.encode("utf-8"),
         signed_payload,
         hashlib.sha256,
     ).hexdigest()
@@ -105,7 +107,7 @@ def _verify_image_callback_signature(request_body: bytes, timestamp: str | None,
 
     if not hmac.compare_digest(expected, received):
         raise HTTPException(status_code=401, detail="Invalid callback signature")
-    
+        
 @router.post("/callback")
 async def image_processing_callback(
     request: Request,
@@ -152,7 +154,7 @@ async def list_product_images(
     return await service.list_images(product_id)
 
 
-@router.put("/{image_id}", response_model=ProductImageResponse)
+@router.put("/{image_id}", response_model=ProductImageResponse,dependencies=[Depends(require_trusted_origin)])
 async def update_image(
     image_id: UUID,
     data: ImageUpdateRequest,
@@ -169,7 +171,7 @@ async def update_image(
         _handle_error(e)
 
 
-@router.delete("/{image_id}", response_model=MessageResponse)
+@router.delete("/{image_id}", response_model=MessageResponse,dependencies=[Depends(require_trusted_origin)])
 async def delete_image(
     image_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -190,7 +192,7 @@ async def delete_image(
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 
-@router.post("/{product_id}/reorder", response_model=list[ProductImageResponse])
+@router.post("/{product_id}/reorder", response_model=list[ProductImageResponse],dependencies=[Depends(require_trusted_origin)])
 async def reorder_images(
     product_id: UUID,
     data: ImageReorderRequest,
@@ -207,7 +209,7 @@ async def reorder_images(
         _handle_error(e)
 
 
-@router.post("/set-primary/{image_id}", response_model=ProductImageResponse)
+@router.post("/set-primary/{image_id}", response_model=ProductImageResponse,dependencies=[Depends(require_trusted_origin)])
 async def set_primary_image(
     image_id: UUID,
     db: AsyncSession = Depends(get_db),

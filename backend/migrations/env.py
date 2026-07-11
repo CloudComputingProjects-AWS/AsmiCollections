@@ -15,7 +15,7 @@ from app.models.models import *  # noqa: F401, F403
 
 settings = get_settings()
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL_SYNC)
+config.set_main_option("sqlalchemy.url", settings.resolved_database_url_sync)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

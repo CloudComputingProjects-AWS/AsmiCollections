@@ -48,7 +48,7 @@ from app.services.gateways.razorpay_client import razorpay_client
 from app.core.payment_config import get_payment_settings
 from app.services.gateways.stripe_client import stripe_client
 from app.services.payment_service import PaymentService, PaymentServiceError
-
+from app.core.origin_policy import require_trusted_origin
 logger = logging.getLogger(__name__)
 
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -78,7 +78,7 @@ def get_payment_service(db: AsyncSession = Depends(get_db)) -> PaymentService:
 @router.post(
     "/payments/methods",
     response_model=PaymentMethodsResponse,
-    summary="Get available payment methods",
+    summary="Get available payment methods",dependencies=[Depends(require_trusted_origin)]
 )
 async def get_payment_methods(
     body: GatewaySelectionRequest,
@@ -92,7 +92,7 @@ async def get_payment_methods(
 @router.post(
     "/payments/razorpay/create",
     response_model=RazorpayCreateOrderResponse,
-    summary="Create Razorpay order for payment",
+    summary="Create Razorpay order for payment",dependencies=[Depends(require_trusted_origin)]
 )
 async def create_razorpay_order(
     body: RazorpayCreateOrderRequest,
@@ -114,7 +114,7 @@ async def create_razorpay_order(
 @router.post(
     "/payments/razorpay/verify",
     response_model=RazorpayVerifyResponse,
-    summary="Verify Razorpay payment signature (client-side)",
+    summary="Verify Razorpay payment signature (client-side)",dependencies=[Depends(require_trusted_origin)]
 )
 async def verify_razorpay_payment(
     body: RazorpayVerifyRequest,
@@ -138,7 +138,7 @@ async def verify_razorpay_payment(
 @router.post(
     "/payments/stripe/create",
     response_model=StripeCreateIntentResponse,
-    summary="Create Stripe PaymentIntent",
+    summary="Create Stripe PaymentIntent",dependencies=[Depends(require_trusted_origin)]
 )
 async def create_stripe_intent(
     body: StripeCreateIntentRequest,
@@ -160,7 +160,7 @@ async def create_stripe_intent(
 @router.get(
     "/payments/{order_id}/status",
     response_model=PaymentStatusResponse,
-    summary="Check payment status for an order",
+    summary="Check payment status for an order"
 )
 async def get_payment_status(
     order_id: UUID,
@@ -180,7 +180,7 @@ async def get_payment_status(
 @router.post(
     "/payments/fx-rate",
     response_model=FXRateResponse,
-    summary="Lock FX rate for checkout",
+    summary="Lock FX rate for checkout",dependencies=[Depends(require_trusted_origin)]
 )
 async def lock_fx_rate(
     body: FXRateLockRequest,
@@ -211,7 +211,7 @@ async def lock_fx_rate(
 @router.get(
     "/payments/checkout-config",
     summary="Get Razorpay public key for checkout (authenticated only)",
-    tags=["UPI Payments"],
+    tags=["UPI Payments"]
 )
 async def get_checkout_config(
     current_user=Depends(get_current_user),
@@ -237,7 +237,7 @@ async def get_checkout_config(
     "/payments/upi/collect",
     response_model=UpiCollectResponse,
     summary="Initiate UPI collect payment (enter VPA)",
-    tags=["UPI Payments"],
+    tags=["UPI Payments"],dependencies=[Depends(require_trusted_origin)]
 )
 async def upi_collect(
     body: UpiCollectRequest,
@@ -261,7 +261,7 @@ async def upi_collect(
     "/payments/upi/qr",
     response_model=UpiQrResponse,
     summary="Generate UPI QR code for scan-to-pay",
-    tags=["UPI Payments"],
+    tags=["UPI Payments"],dependencies=[Depends(require_trusted_origin)]
 )
 async def upi_qr(
     body: UpiQrRequest,
@@ -368,7 +368,7 @@ async def stripe_webhook(
 @admin_payment_router.post(
     "/refund",
     response_model=RefundResponse,
-    summary="Initiate refund for an order",
+    summary="Initiate refund for an order", dependencies=[Depends(require_trusted_origin)]
 )
 async def admin_initiate_refund(
     body: RefundInitiateRequest,

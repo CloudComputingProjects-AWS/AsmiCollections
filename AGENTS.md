@@ -156,21 +156,30 @@ These names were established during the project rollout work and should be treat
 - `APP_VERSION`
 - `AWS_REGION`
 - `AWS_ROLE_TO_ASSUME`
+- `API_GATEWAY_ID`
+- `API_GATEWAY_STAGE`
+- `CORS_ORIGINS`
 - `CLOUDFRONT_DISTRIBUTION_ID`
 - `ECR_REPOSITORY`
+- `ENABLE_HSTS`
+- `ENABLE_SECURITY_HEADERS`
 - `ENVIRONMENT`
 - `FRONTEND_URL`
+- `IMAGE_CALLBACK_SECRET_PARAM`
 - `IMAGE_CDN_DOMAIN`
 - `IMAGE_PROCESSOR_ECR_REPOSITORY`
 - `IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME`
 - `JWT_ALGORITHM`
 - `LAMBDA_FUNCTION_NAME`
+- `EXPECTED_API_THROTTLE_BURST`
+- `EXPECTED_API_THROTTLE_RATE`
+- `DATABASE_URL_PARAM`
+- `DATABASE_URL_SYNC_PARAM`
 - `S3_FRONTEND_BUCKET`
+- `TRUSTED_HOSTS`
 
 ### `aws_dev` secrets currently expected by workflow
 
-- `DATABASE_URL`
-- `DATABASE_URL_SYNC`
 - `IMAGE_CALLBACK_SECRET`
 - `VITE_API_URL`
 
@@ -181,13 +190,22 @@ As of the current verified workflow, [deploy-dev-v3.yml](C:/Ashmiwebportal/.gith
 - `APP_NAME`
 - `APP_VERSION`
 - `ENVIRONMENT`
+- `AWS_REGION`
+- `API_GATEWAY_ID`
+- `API_GATEWAY_STAGE`
+- `EXPECTED_API_THROTTLE_BURST`
+- `EXPECTED_API_THROTTLE_RATE`
 - `FRONTEND_URL`
 - `JWT_ALGORITHM`
-- `DATABASE_URL`
-- `DATABASE_URL_SYNC`
-- `IMAGE_CALLBACK_SECRET`
+- `IMAGE_CALLBACK_SECRET_PARAM`
+- `DATABASE_URL_PARAM`
+- `DATABASE_URL_SYNC_PARAM`
+- `CORS_ORIGINS`
+- `TRUSTED_HOSTS`
+- `ENABLE_SECURITY_HEADERS`
+- `ENABLE_HSTS`
 
-Therefore, `DATABASE_URL`, `DATABASE_URL_SYNC`, and `FRONTEND_URL` should be maintained in GitHub `aws_dev` and are pushed into `ashmi-backend-dev` during deploy.
+Therefore, backend SSM parameter names, AWS protection expectation values, and other non-secret runtime settings should be maintained in GitHub `aws_dev` and are pushed into `ashmi-backend-dev` during deploy.
 
 ## Backend Runtime Configuration Truths
 
@@ -196,6 +214,10 @@ Therefore, `DATABASE_URL`, `DATABASE_URL_SYNC`, and `FRONTEND_URL` should be mai
 - [backend/app/core/config.py](C:/Ashmiwebportal/backend/app/core/config.py) is intentionally being used as a schema/defaults definition layer
 - Sensitive runtime values should come from environment variables, not hard-coded secrets in the file
 - The user previously chose to keep some values blank in code and source them from environment/runtime configuration
+- Current intended pattern:
+  - local development may provide direct values such as `DATABASE_URL`, `DATABASE_URL_SYNC`, and `IMAGE_CALLBACK_SECRET` in `backend/.env`
+  - AWS Lambda should provide `DATABASE_URL_PARAM`, `DATABASE_URL_SYNC_PARAM`, and `IMAGE_CALLBACK_SECRET_PARAM`
+  - backend code must resolve `_PARAM` names from AWS SSM Parameter Store before use
 
 ### Database URLs
 
@@ -208,6 +230,10 @@ Therefore, `DATABASE_URL`, `DATABASE_URL_SYNC`, and `FRONTEND_URL` should be mai
   - currently Neon PostgreSQL
   - not `localhost`
   - not `postgres`
+- For current SSM-backed `aws_dev` direction:
+  - `DATABASE_URL_PARAM` should point to the async DB URL parameter name
+  - `DATABASE_URL_SYNC_PARAM` should point to the sync migration DB URL parameter name
+  - the parameter values themselves must contain the actual Neon connection strings
 
 ### Neon connection guidance
 
@@ -217,6 +243,9 @@ Therefore, `DATABASE_URL`, `DATABASE_URL_SYNC`, and `FRONTEND_URL` should be mai
   - `postgresql+asyncpg://USER:PASSWORD@DIRECT_NEON_HOST/DB_NAME`
 - `DATABASE_URL_SYNC` should use the sync migration driver format:
   - `postgresql+psycopg2://USER:PASSWORD@DIRECT_NEON_HOST/DB_NAME?sslmode=require`
+- If using SSM in `aws_dev`:
+  - the SecureString value stored at `DATABASE_URL_PARAM` must be the full async URL above
+  - the SecureString value stored at `DATABASE_URL_SYNC_PARAM` must be the full sync URL above
 - If Neon shows a pooled host like `ep-xxx-pooler...`, remove `-pooler` or turn connection pooling off in the Neon connection modal to get the direct host
 - Cross-region latency is a known concern and has been discussed as a future architecture improvement
 
@@ -232,9 +261,14 @@ Important details:
 
 - `deploy-backend` depends on `deploy-image-processor`
 - image processor config is synced before image deployment
+- backend deploy now performs deployment-time AWS protection validation before rollout
 - backend Lambda config is synced before backend image deployment
+- backend secret handling is currently split:
+  - backend Lambda is intended to receive SSM parameter names for DB URLs and image callback secret
+  - image processor Lambda still receives raw `IMAGE_CALLBACK_SECRET` directly from GitHub secret unless workflow/code is changed later
 - frontend build uses `VITE_API_URL`
 - frontend artifacts are uploaded to S3 and then CloudFront is invalidated
+- backend rollout should fail if API Gateway throttling or CloudFront WAF rate-based protections are absent or weaker than expected
 
 ## Branch / PR Review Language
 
@@ -272,6 +306,33 @@ Important details:
   - the wrong authenticator secret is being used
   - the code expires
   - the device clock is off
+### CSRF / Origin Policy
+
+- Current project direction is to keep `SameSite=Strict` for browser auth cookies
+- Because `SameSite=Strict` is being kept, browser-driven state-changing routes should also enforce strict `Origin` validation
+- Do not use one large global allowlist for every runtime path
+- Use route-scoped policy instead:
+  - browser-cookie routes such as `/api/v1/auth/`, `/api/v1/auth/2fa/`, and browser-driven admin write routes should require an allowed `Origin`
+  - machine-to-machine routes such as image callbacks and payment webhooks should be exempt from `Origin` checks and instead rely on stronger service authentication such as HMAC signatures or webhook verification
+- Preferred allowlist source for browser routes:
+  - `FRONTEND_URL`
+  - `CORS_ORIGINS`
+- Preferred behavior:
+  - enforce `Origin` only for `POST`, `PUT`, `PATCH`, and `DELETE`
+  - reject missing or mismatched `Origin` with `403`
+- Current verified codebase status:
+  - shared Origin guard exists in [backend/app/core/origin_policy.py](C:/Ashmiwebportal/backend/app/core/origin_policy.py)
+  - trusted browser origins are derived from:
+    - `FRONTEND_URL`
+    - `CORS_ORIGINS`
+  - the guard is already applied across auth, 2FA, admin products, admin images, cart/coupons, orders, shipping/returns, reviews, payments, privacy, user profile, admin dashboard, admin settings, and invoice-regeneration write routes
+  - machine-to-machine routes remain exempt from `Origin` checks and instead use signature-based verification:
+    - image callback in [backend/app/api/v1/endpoints/admin_images.py](C:/Ashmiwebportal/backend/app/api/v1/endpoints/admin_images.py)
+    - Razorpay webhook in [backend/app/api/v1/endpoints/payments.py](C:/Ashmiwebportal/backend/app/api/v1/endpoints/payments.py)
+    - Stripe webhook in [backend/app/api/v1/endpoints/payments.py](C:/Ashmiwebportal/backend/app/api/v1/endpoints/payments.py)
+  - one verified remaining gap still exists:
+    - `POST /api/v1/admin/refunds` in [backend/app/api/v1/endpoints/shipping_returns.py](C:/Ashmiwebportal/backend/app/api/v1/endpoints/shipping_returns.py) is still live without `Depends(require_trusted_origin)`
+  - no automated Origin-policy test coverage was found under `backend/app/tests`
 
 ### Rate limiting architecture
 
@@ -284,11 +345,19 @@ Current project direction is AWS-side protection, not app-side Redis middleware.
   - WAF rate-based rules
   - managed WAF protections
   - application validation/auth logic
+- Current deployment direction:
+  - GitHub Actions should validate API Gateway throttling and CloudFront WAF association before backend rollout
+  - deploy should fail closed when those protections are absent or below expected thresholds
 
 ### Verified `aws_dev` protection baseline
 
 - API ID:
   - `9amq4q9qa4`
+- Stage name:
+  - `$default`
+- Expected default API throttling baseline:
+  - burst: `10`
+  - rate: `5`
 - CloudFront distribution:
   - `E32QTT8QPXCW64`
 - WAF protections previously verified:
@@ -296,6 +365,9 @@ Current project direction is AWS-side protection, not app-side Redis middleware.
   - AWS managed IP reputation
   - AWS managed common rules
   - AWS managed known bad inputs
+- Source of truth for these values:
+  - API Gateway stage configuration in AWS Console
+  - CloudFront distribution WAF association in AWS Console
 
 ## Known Operational Findings Carried Forward
 
@@ -383,6 +455,7 @@ Always re-check these instead of trusting old chat memory:
 3. whether local testing is host-run or Docker-run
 4. whether a login issue is auth-related or backend-health-related
 5. whether a CloudWatch alert is a real persistent failure or a transient spike
+6. whether backend code is resolving SSM `_PARAM` values or still expecting raw secrets
 
 ## TODO / Open Gaps
 
@@ -391,6 +464,9 @@ Always re-check these instead of trusting old chat memory:
 - Alembic migration command is not yet documented as canonical
 - Admin dashboard latency remains an open optimization track
 - Neon region mismatch remains unresolved
+- Route-scoped Origin policy still has one verified live-route gap:
+  - `POST /api/v1/admin/refunds` in [backend/app/api/v1/endpoints/shipping_returns.py](C:/Ashmiwebportal/backend/app/api/v1/endpoints/shipping_returns.py) is not yet protected by `Depends(require_trusted_origin)`
+- Route-scoped Origin policy currently has no repo-local automated tests under `backend/app/tests`
 
 ## Current Blockers / Next Priorities
 
@@ -447,6 +523,3 @@ When starting a new session in this repo, assume the following until disproved:
 3. AWS dev frontend is behind CloudFront `E32QTT8QPXCW64`
 4. Local login issues should first be debugged as runtime-health issues before auth-data issues
 5. Docker Compose is local-only and should never be treated as AWS runtime infrastructure
-
-
-

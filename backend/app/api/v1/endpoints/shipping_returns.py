@@ -48,7 +48,7 @@ from app.schemas.shipping_returns_schemas import (
 from app.services.notification_service import NotificationService
 from app.services.return_service import ReturnService, ReturnServiceError
 from app.services.shipping_service import ShippingService, ShippingServiceError
-
+from app.core.origin_policy import require_trusted_origin
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # CUSTOMER ROUTES
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -56,7 +56,7 @@ from app.services.shipping_service import ShippingService, ShippingServiceError
 customer_returns_router = APIRouter(prefix="/returns", tags=["Returns"])
 
 
-@customer_returns_router.post("", response_model=ReturnResponse)
+@customer_returns_router.post("", response_model=ReturnResponse, dependencies=[Depends(require_trusted_origin)])
 async def request_return(
     data: ReturnRequestCreate,
     user: User = Depends(get_current_user),
@@ -109,7 +109,7 @@ admin_shipping_router = APIRouter(
 order_mgr = require_role("order_manager", "admin")
 
 
-@admin_shipping_router.post("", response_model=ShipmentResponse)
+@admin_shipping_router.post("", response_model=ShipmentResponse, dependencies=[Depends(require_trusted_origin)])
 async def create_shipment(
     data: ShipmentCreateRequest,
     user: User = Depends(order_mgr),
@@ -172,7 +172,7 @@ async def get_shipment(
     return ShipmentResponse.model_validate(shipment)
 
 
-@admin_shipping_router.put("/{shipment_id}", response_model=ShipmentResponse)
+@admin_shipping_router.put("/{shipment_id}", response_model=ShipmentResponse, dependencies=[Depends(require_trusted_origin)])
 async def update_shipment(
     shipment_id: UUID,
     data: ShipmentUpdateRequest,
@@ -191,7 +191,7 @@ async def update_shipment(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-@admin_shipping_router.post("/{shipment_id}/ship", response_model=ShipmentResponse)
+@admin_shipping_router.post("/{shipment_id}/ship", response_model=ShipmentResponse, dependencies=[Depends(require_trusted_origin)])
 async def mark_shipped(
     shipment_id: UUID,
     user: User = Depends(order_mgr),
@@ -228,7 +228,7 @@ async def mark_shipped(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-@admin_shipping_router.post("/{shipment_id}/deliver", response_model=ShipmentResponse)
+@admin_shipping_router.post("/{shipment_id}/deliver", response_model=ShipmentResponse, dependencies=[Depends(require_trusted_origin)])
 async def mark_delivered(
     shipment_id: UUID,
     user: User = Depends(order_mgr),
@@ -315,7 +315,7 @@ async def get_return_detail(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-@admin_returns_router.post("/{return_id}/action", response_model=ReturnResponse)
+@admin_returns_router.post("/{return_id}/action", response_model=ReturnResponse, dependencies=[Depends(require_trusted_origin)])
 async def return_action(
     return_id: UUID,
     data: ReturnActionRequest,
@@ -346,7 +346,7 @@ async def return_action(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-@admin_returns_router.post("/{return_id}/receive", response_model=ReturnResponse)
+@admin_returns_router.post("/{return_id}/receive", response_model=ReturnResponse, dependencies=[Depends(require_trusted_origin)])
 async def receive_return(
     return_id: UUID,
     data: ReturnReceiveRequest | None = None,
@@ -376,7 +376,7 @@ admin_refunds_router = APIRouter(
 )
 
 
-@admin_refunds_router.post("", response_model=RefundResponse)
+@admin_refunds_router.post("", response_model=RefundResponse,dependencies=[Depends(require_trusted_origin)])
 async def initiate_refund(
     data: RefundInitiateRequest,
     user: User = Depends(require_role("order_manager", "finance_manager", "admin")),
