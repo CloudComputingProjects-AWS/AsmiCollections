@@ -118,7 +118,7 @@ jobs:
               ;;
           esac
 
-          WEB_ACL_NAME=$(echo "$WEB_ACL_ID" | cut -d: -f6 | cut -d/ -f2)
+          WEB_ACL_NAME=$(echo "$WEB_ACL_ID" | cut -d: -f6 | cut -d/ -f3)
           WEB_ACL_UUID=$(echo "$WEB_ACL_ID" | cut -d: -f6 | cut -d/ -f4)
 
           WAF_ACL=$(aws wafv2 get-web-acl \

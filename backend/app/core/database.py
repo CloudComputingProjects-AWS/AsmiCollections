@@ -35,7 +35,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import AsyncAdaptedQueuePool, NullPool
-
+from collections.abc import AsyncGenerator
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -90,7 +90,7 @@ class Base(DeclarativeBase):
     pass
 
 
-async def get_db() -> AsyncSession:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency: yields a DB session per request."""
     async with async_session_factory() as session:
         try:
