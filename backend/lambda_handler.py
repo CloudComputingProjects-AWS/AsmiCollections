@@ -29,6 +29,11 @@ from mangum import Mangum
 # Lazy-loaded references — populated on first invocation
 _mangum_handler = None
 _app = None
+def _api_gateway_base_path() -> str:
+    stage = os.environ.get("API_GATEWAY_STAGE", "").strip().strip("/")
+    if not stage or stage == "$default":
+        return "/"
+    return f"/{stage}"
 
 def _ensure_app():
     """
@@ -43,7 +48,11 @@ def _ensure_app():
 
     from app.main import app
     _app = app
-    _mangum_handler = Mangum(app, lifespan="off")
+    _mangum_handler = Mangum(
+    app,
+    lifespan="off",
+    api_gateway_base_path=_api_gateway_base_path(),
+)
 
 
 def handler(event: dict, context) -> dict:
