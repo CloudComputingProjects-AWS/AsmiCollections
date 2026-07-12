@@ -176,7 +176,6 @@ jobs:
             --arg app_name "$APP_NAME" \
             --arg app_version "$APP_VERSION" \
             --arg environment "$ENVIRONMENT" \
-            --arg aws_region "$AWS_REGION" \
             --arg api_gateway_id "$API_GATEWAY_ID" \
             --arg api_gateway_stage "$API_GATEWAY_STAGE" \
             --arg expected_api_throttle_burst "$EXPECTED_API_THROTTLE_BURST" \
@@ -194,7 +193,6 @@ jobs:
               APP_NAME: $app_name,
               APP_VERSION: $app_version,
               ENVIRONMENT: $environment,
-              AWS_REGION: $aws_region,
               API_GATEWAY_ID: $api_gateway_id,
               API_GATEWAY_STAGE: $api_gateway_stage,
               EXPECTED_API_THROTTLE_BURST: $expected_api_throttle_burst,
