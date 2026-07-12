@@ -179,8 +179,8 @@ jobs:
             --arg aws_region "$AWS_REGION" \
             --arg api_gateway_id "$API_GATEWAY_ID" \
             --arg api_gateway_stage "$API_GATEWAY_STAGE" \
-            --argjson expected_api_throttle_burst "$EXPECTED_API_THROTTLE_BURST" \
-            --argjson expected_api_throttle_rate "$EXPECTED_API_THROTTLE_RATE" \
+            --arg expected_api_throttle_burst "$EXPECTED_API_THROTTLE_BURST" \
+            --arg expected_api_throttle_rate "$EXPECTED_API_THROTTLE_RATE" \
             --arg frontend_url "$FRONTEND_URL" \
             --arg jwt_algorithm "$JWT_ALGORITHM" \
             --arg image_callback_secret_param "$IMAGE_CALLBACK_SECRET_PARAM" \

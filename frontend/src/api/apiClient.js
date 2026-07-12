@@ -89,12 +89,7 @@ apiClient.interceptors.response.use(
       try {
         // POST refresh — browser sends refresh_token httpOnly cookie automatically
         // No request body needed — backend reads token from cookie
-        await axios.post(
-          '/api/v1/auth/refresh',
-          {},
-          { withCredentials: true }
-        );
-
+        await apiClient.post('/auth/refresh', {});
         processQueue(null);
         // Retry original request — browser sends new access_token cookie automatically
         return apiClient(originalRequest);

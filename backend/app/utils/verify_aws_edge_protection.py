@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from typing import NoReturn
 
 import boto3
 
@@ -52,7 +53,7 @@ def verify_cloudfront_waf(distribution_id: str) -> None:
         print("WAF association exists; skipped rule inspection because ARN format was unexpected")
         return
 
-    web_acl_name = resource_parts[1]
+    web_acl_name = resource_parts[2]
     web_acl_uuid = resource_parts[3]
 
     waf = boto3.client("wafv2", region_name=region_name)
