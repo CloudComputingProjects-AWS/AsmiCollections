@@ -96,6 +96,7 @@ class Settings(BaseSettings):
     "localhost",
     "127.0.0.1",
     "*.execute-api.ap-south-1.amazonaws.com",
+    "*.execute-api.ap-southeast-1.amazonaws.com",
     ]
     ENABLE_SECURITY_HEADERS: bool = True
     ENABLE_HSTS: bool = False
