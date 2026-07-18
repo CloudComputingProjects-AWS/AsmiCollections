@@ -17,6 +17,7 @@ Provides:
 import csv
 import io
 import logging
+from time import perf_counter
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
@@ -54,98 +55,125 @@ class AdminDashboardService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    async def _execute_timed(self, label: str, statement):
+        start = perf_counter()
+        try:
+            return await self.db.execute(statement)
+        finally:
+            elapsed_ms = (perf_counter() - start) * 1000
+            logger.info(
+                "admin_dashboard.query_timing label=%s elapsed_ms=%.2f",
+                label,
+                elapsed_ms,
+            )
+
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Dashboard KPIs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def get_dashboard_stats(self) -> dict:
         """Get top-level KPI metrics for admin dashboard."""
 
-        # Revenue & order counts
-        revenue_result = await self.db.execute(
+        paid_orders = and_(
+            Order.order_status.notin_(["cancelled"]),
+            Order.payment_status == "paid",
+        )
+
+        def order_status_count(status: str):
+            return (
+                select(func.count(Order.id))
+                .where(Order.order_status == status)
+                .scalar_subquery()
+            )
+
+        stats_result = await self._execute_timed(
+            "stats_summary",
             select(
-                func.coalesce(func.sum(Order.grand_total), 0).label("total_revenue"),
-                func.count(Order.id).label("total_orders"),
-            ).where(
-                Order.order_status.notin_(["cancelled"]),
-                Order.payment_status == "paid",
+                (
+                    select(func.coalesce(func.sum(Order.grand_total), 0))
+                    .where(paid_orders)
+                    .scalar_subquery()
+                ).label("total_revenue"),
+                (
+                    select(func.count(Order.id))
+                    .where(paid_orders)
+                    .scalar_subquery()
+                ).label("total_orders"),
+                order_status_count("placed").label("pending_orders"),
+                order_status_count("processing").label("processing_orders"),
+                order_status_count("shipped").label("shipped_orders"),
+                order_status_count("delivered").label("delivered_orders"),
+                order_status_count("cancelled").label("cancelled_orders"),
+                order_status_count("return_requested").label("return_requested_count"),
+                (
+                    select(func.count(User.id))
+                    .where(
+                        User.role == "customer",
+                        User.is_active == True,
+                        User.deleted_at.is_(None),
+                    )
+                    .scalar_subquery()
+                ).label("total_customers"),
+                (
+                    select(func.count(ProductVariant.id))
+                    .where(
+                        ProductVariant.stock_quantity < 10,
+                        ProductVariant.is_active == True,
+                        ProductVariant.deleted_at.is_(None),
+                    )
+                    .scalar_subquery()
+                ).label("low_stock_variants"),
+                (
+                    select(func.count(Review.id))
+                    .where(Review.is_approved == False)
+                    .scalar_subquery()
+                ).label("pending_reviews"),
+                (
+                    select(func.count(Order.id))
+                    .where(Order.payment_status == "failed")
+                    .scalar_subquery()
+                ).label("failed_payments"),
+                (
+                    select(func.count(Return.id))
+                    .where(Return.status == "requested")
+                    .scalar_subquery()
+                ).label("pending_returns"),
             )
         )
-        rev_row = revenue_result.one()
+        stats_row = stats_result.one()
 
-        total_revenue = Decimal(str(rev_row.total_revenue))
-        total_orders = rev_row.total_orders
+        total_revenue = Decimal(str(stats_row.total_revenue))
+        total_orders = stats_row.total_orders
         avg_order_value = (
             (total_revenue / total_orders).quantize(Decimal("0.01"))
             if total_orders > 0
             else Decimal("0")
         )
 
-        # Order status counts
-        status_result = await self.db.execute(
-            select(Order.order_status, func.count(Order.id)).group_by(Order.order_status)
-        )
-        status_counts = {row[0]: row[1] for row in status_result.all()}
-
-        # Customer count
-        cust_result = await self.db.execute(
-            select(func.count(User.id)).where(
-                User.role == "customer", User.is_active == True, User.deleted_at.is_(None)
-            )
-        )
-        total_customers = cust_result.scalar() or 0
-
-        # Low stock variants (stock < 10)
-        low_stock_result = await self.db.execute(
-            select(func.count(ProductVariant.id)).where(
-                ProductVariant.stock_quantity < 10,
-                ProductVariant.is_active == True,
-                ProductVariant.deleted_at.is_(None),
-            )
-        )
-        low_stock_variants = low_stock_result.scalar() or 0
-
-        # Pending reviews
-        pending_reviews_result = await self.db.execute(
-            select(func.count(Review.id)).where(Review.is_approved == False)
-        )
-        pending_reviews = pending_reviews_result.scalar() or 0
-
-        # Failed payments
-        failed_payments_result = await self.db.execute(
-            select(func.count(Order.id)).where(Order.payment_status == "failed")
-        )
-        failed_payments = failed_payments_result.scalar() or 0
-
-        # Pending returns
-        pending_returns_result = await self.db.execute(
-            select(func.count(Return.id)).where(Return.status == "requested")
-        )
-        pending_returns = pending_returns_result.scalar() or 0
-
         return {
             "total_revenue": total_revenue,
             "total_orders": total_orders,
             "avg_order_value": avg_order_value,
-            "total_customers": total_customers,
-            "pending_orders": status_counts.get("placed", 0),
-            "processing_orders": status_counts.get("processing", 0),
-            "shipped_orders": status_counts.get("shipped", 0),
-            "delivered_orders": status_counts.get("delivered", 0),
-            "cancelled_orders": status_counts.get("cancelled", 0),
-            "return_requested_count": status_counts.get("return_requested", 0),
-            "pending_returns": pending_returns,
-            "failed_payments": failed_payments,
-            "low_stock_variants": low_stock_variants,
-            "pending_reviews": pending_reviews,
+            "total_customers": stats_row.total_customers or 0,
+            "pending_orders": stats_row.pending_orders or 0,
+            "processing_orders": stats_row.processing_orders or 0,
+            "shipped_orders": stats_row.shipped_orders or 0,
+            "delivered_orders": stats_row.delivered_orders or 0,
+            "cancelled_orders": stats_row.cancelled_orders or 0,
+            "return_requested_count": stats_row.return_requested_count or 0,
+            "pending_returns": stats_row.pending_returns or 0,
+            "failed_payments": stats_row.failed_payments or 0,
+            "low_stock_variants": stats_row.low_stock_variants or 0,
+            "pending_reviews": stats_row.pending_reviews or 0,
         }
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Revenue Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Revenue Chart
 
     async def get_revenue_trend(self, period: str = "30d") -> list[dict]:
         """Get revenue trend data for chart."""
         days = {"7d": 7, "30d": 30, "90d": 90, "1y": 365}.get(period, 30)
         start_date = datetime.now(timezone.utc) - timedelta(days=days)
 
-        result = await self.db.execute(
+        result = await self._execute_timed(
+            f"revenue_trend period={period}",
             select(
                 cast(Order.created_at, Date).label("order_date"),
                 func.coalesce(func.sum(Order.grand_total), 0).label("revenue"),
@@ -173,7 +201,8 @@ class AdminDashboardService:
 
     async def get_top_products(self, limit: int = 10) -> list[dict]:
         """Get top selling products by units sold."""
-        result = await self.db.execute(
+        result = await self._execute_timed(
+            f"top_products limit={limit}",
             select(
                 OrderItem.product_variant_id,
                 func.max(OrderItem.product_title_snapshot).label("title"),
