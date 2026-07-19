@@ -285,7 +285,7 @@ Important Singapore API Gateway / Lambda lessons:
 - A broader route permission was also added during troubleshooting:
   - `arn:aws:execute-api:ap-southeast-1:762813627344:r5k4xtwcpi/*/*/*`
 - If API Gateway returns `500` and no fresh Lambda log stream/events appear, check Lambda resource policy and route/integration permissions before debugging app code.
-- For Singapore backend env, `DATABASE_URL_PARAM`, `DATABASE_URL_SYNC_PARAM`, and `IMAGE_CALLBACK_SECRET_PARAM` must point to the `-sg` SSM names above.
+- For Singapore backend and image processor env, `DATABASE_URL_PARAM`, `DATABASE_URL_SYNC_PARAM`, and `IMAGE_CALLBACK_SECRET_PARAM` must point to the selected SG SSM names above.
 - `CORS_ORIGINS` should be JSON-list shaped and must include the active SG CloudFront frontend origin, for example:
   - `["https://<sg-dev-cloudfront-domain>"]`
 - `FRONTEND_URL` should also be the active SG CloudFront frontend origin so password-reset links point to the SG stack.
@@ -323,8 +323,13 @@ Important Singapore API Gateway / Lambda lessons:
 
 ### `aws_dev` secrets currently expected by workflow
 
-- `IMAGE_CALLBACK_SECRET`
 - `VITE_API_URL`
+
+Important image callback secret rule:
+
+- `IMAGE_CALLBACK_SECRET` has been removed from GitHub `aws_dev` secrets.
+- Do not re-add `IMAGE_CALLBACK_SECRET` as a GitHub secret for the Singapore dev path.
+- Both backend and image processor Lambdas should use the `IMAGE_CALLBACK_SECRET_PARAM` environment variable, whose value is the SSM SecureString parameter name.
 
 ### Backend Lambda runtime settings synced by workflow
 
@@ -367,6 +372,7 @@ Important Lambda environment rule:
   - local development may provide direct values such as `DATABASE_URL`, `DATABASE_URL_SYNC`, and `IMAGE_CALLBACK_SECRET` in `backend/.env`
   - AWS Lambda should provide `DATABASE_URL_PARAM`, `DATABASE_URL_SYNC_PARAM`, and `IMAGE_CALLBACK_SECRET_PARAM`
   - backend code must resolve `_PARAM` names from AWS SSM Parameter Store before use
+  - image processor Lambda code should use `IMAGE_CALLBACK_SECRET_PARAM`; any old raw `IMAGE_CALLBACK_SECRET` Lambda environment variable is stale cleanup only and should not be used by code
 
 ### Database URLs
 
@@ -412,9 +418,11 @@ Important details:
 - image processor config is synced before image deployment
 - backend deploy now performs deployment-time AWS protection validation before rollout
 - backend Lambda config is synced before backend image deployment
-- backend secret handling is currently split:
-  - backend Lambda is intended to receive SSM parameter names for DB URLs and image callback secret
-  - image processor Lambda still receives raw `IMAGE_CALLBACK_SECRET` directly from GitHub secret unless workflow/code is changed later
+- backend and image processor secret handling now use SSM parameter names for image callback secret consistency:
+  - backend Lambda receives `IMAGE_CALLBACK_SECRET_PARAM` and resolves the SecureString from SSM
+  - image processor Lambda receives `IMAGE_CALLBACK_SECRET_PARAM`, resolves the same SecureString from SSM, and uses it to sign callbacks
+  - GitHub `aws_dev` no longer needs the raw `IMAGE_CALLBACK_SECRET` secret for this path
+  - removing `IMAGE_CALLBACK_SECRET` from an existing Lambda environment is only hygiene for stale deployments; it is not required for `IMAGE_CALLBACK_SECRET_PARAM` to work
 - frontend build uses `VITE_API_URL`
 - `VITE_API_URL` is also used to derive image processor callback URL:
   - `${VITE_API_URL%/}/admin/images/callback`

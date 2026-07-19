@@ -1,5 +1,5 @@
 """
-AWS Lambda Image Processor — Python
+AWS Lambda Image Processor - Python
 Triggered by S3 PutObject event on uploads/raw/ prefix.
 
 Generates 3 WebP variants using Pillow:
@@ -25,6 +25,7 @@ from typing import Any
 import hashlib
 import hmac
 import time
+from functools import lru_cache
 import boto3
 from PIL import Image
 
@@ -44,12 +45,25 @@ SIZES = [
 ]
 
 s3_client = boto3.client("s3", region_name=AWS_REGION)
-IMAGE_CALLBACK_SECRET = os.environ.get("IMAGE_CALLBACK_SECRET")
+
+
+@lru_cache(maxsize=1)
+def _get_callback_secret() -> str:
+    parameter_name = os.environ.get("IMAGE_CALLBACK_SECRET_PARAM")
+    if not parameter_name:
+        raise RuntimeError("IMAGE_CALLBACK_SECRET_PARAM is not configured")
+
+    ssm_client = boto3.client("ssm", region_name=AWS_REGION)
+    response = ssm_client.get_parameter(
+        Name=parameter_name,
+        WithDecryption=True,
+    )
+    return response["Parameter"]["Value"]
 
 # --------------- Handler ---------------
 
 def lambda_handler(event: dict, context: Any) -> dict:
-    """Main Lambda entry point — processes S3 event records."""
+    """Main Lambda entry point - processes S3 event records."""
     print(f"Event: {json.dumps(event)}")
 
     for record in event.get("Records", []):
@@ -191,15 +205,14 @@ def lambda_handler(event: dict, context: Any) -> dict:
 # --------------- Helpers ---------------
 
 def _post_callback(data: dict) -> None:
-    if not IMAGE_CALLBACK_SECRET:
-        raise RuntimeError("IMAGE_CALLBACK_SECRET is not configured")
+    image_callback_secret = _get_callback_secret()
 
     body = json.dumps(data, separators=(",", ":"), sort_keys=True).encode("utf-8")
     timestamp = str(int(time.time()))
     signed_payload = timestamp.encode("utf-8") + b"." + body
 
     signature = hmac.new(
-        IMAGE_CALLBACK_SECRET.encode("utf-8"),
+        image_callback_secret.encode("utf-8"),
         signed_payload,
         hashlib.sha256,
     ).hexdigest()

@@ -266,9 +266,9 @@ jobs:
           IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME: ${{ vars.IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME }}
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
           IMAGE_CDN_DOMAIN: ${{ vars.IMAGE_CDN_DOMAIN }}
-          IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
+          IMAGE_CALLBACK_SECRET_PARAM: ${{ vars.IMAGE_CALLBACK_SECRET_PARAM }}
         run: |
-          for name in AWS_ROLE_TO_ASSUME AWS_REGION IMAGE_PROCESSOR_ECR_REPOSITORY IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME VITE_API_URL IMAGE_CDN_DOMAIN IMAGE_CALLBACK_SECRET; do
+          for name in AWS_ROLE_TO_ASSUME AWS_REGION IMAGE_PROCESSOR_ECR_REPOSITORY IMAGE_PROCESSOR_LAMBDA_FUNCTION_NAME VITE_API_URL IMAGE_CDN_DOMAIN IMAGE_CALLBACK_SECRET_PARAM; do
             if [ -z "${!name}" ]; then
               echo "::error::$name is not configured for aws_dev"
               exit 1
@@ -294,7 +294,7 @@ jobs:
 
       - name: Sync image processor Lambda configuration
         env:
-          IMAGE_CALLBACK_SECRET: ${{ secrets.IMAGE_CALLBACK_SECRET }}
+          IMAGE_CALLBACK_SECRET_PARAM: ${{ vars.IMAGE_CALLBACK_SECRET_PARAM }}
           CALLBACK_URL: ${{ steps.image-callback.outputs.callback_url }}
           IMAGE_CDN_DOMAIN: ${{ steps.image-callback.outputs.image_cdn_domain }}
         run: |
@@ -309,11 +309,11 @@ jobs:
           fi
 
           ENVIRONMENT_PAYLOAD=$(echo "$CURRENT_VARS" | jq -c \
-            --arg image_callback_secret "$IMAGE_CALLBACK_SECRET" \
+            --arg image_callback_secret_param "$IMAGE_CALLBACK_SECRET_PARAM" \
             --arg callback_url "$CALLBACK_URL" \
             --arg image_cdn_domain "$IMAGE_CDN_DOMAIN" \
             '{Variables: (. + {
-              IMAGE_CALLBACK_SECRET: $image_callback_secret,
+              IMAGE_CALLBACK_SECRET_PARAM: $image_callback_secret_param,
               CALLBACK_URL: $callback_url,
               IMAGE_CDN_DOMAIN: $image_cdn_domain
             })}')
