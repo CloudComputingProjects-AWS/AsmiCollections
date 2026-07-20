@@ -6,7 +6,7 @@ on:
       - develop
   workflow_dispatch:
 concurrency:
-  group: deploy-dev
+  group: deploy-dev-${{ github.run_id }}
   cancel-in-progress: true
 
 permissions:
