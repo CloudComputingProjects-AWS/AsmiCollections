@@ -227,6 +227,10 @@ These resources define the full `ap-southeast-1` dev stack direction. Use them a
   - verified on 2026-07-18 as:
     - `200`
     - `{"status":"healthy","version":"2.5.0","environment":"aws_dev"}`
+  - re-verified on 2026-08-17 IST as:
+    - public API Gateway `/dev/health`: `200`
+    - direct Lambda invoke for `ashmi-backend-dev-sg`: app-level `200 healthy`
+  - a transient public API Gateway `500` was observed immediately before the successful 2026-08-17 recheck, while direct Lambda health was healthy; if this recurs, inspect API Gateway/Lambda invocation path and logs before assuming app-code failure
 - Singapore frontend S3 bucket for full SG dev stack:
   - `ashmi-dev-frontend-sg`
 - Singapore assets S3 bucket:
@@ -583,7 +587,8 @@ Current project direction is AWS-side protection, not app-side Redis middleware.
   - `revenue-trend`
   - `top-products`
 - Backend/API latency mitigation has been applied by moving the dev backend/API direction to Singapore and reducing dashboard stats DB round trips in code.
-- After full SG frontend/API/image cutover, re-test dashboard timings before treating latency as still open.
+- As of 2026-08-17, Singapore backend health is verified, but the latest local/feature-branch latency code is not proven deployed to `aws_dev`; `ashmi-backend-dev-sg` configuration inspected on 2026-08-17 showed `LastModified=2026-07-17T23:29:20Z`.
+- Do not mark the latency issue resolved solely from `/health`; after a successful `develop` deployment, re-test dashboard timings for `auth/me`, `stats`, `revenue-trend`, and `top-products` before closing the latency task.
 
 ### 3. Revenue trend optimization work
 
@@ -670,7 +675,8 @@ Always re-check these instead of trusting old chat memory:
 - GitHub Actions dev deployment is working from `develop`
 - Frontend, backend, and image-processor deploy jobs have run successfully in recent `aws_dev` rollout work
 - Admin login and 2FA have worked in `aws_dev` during prior validation, but re-validation may still be needed after any auth or env change
-- Singapore `aws_dev` backend/API path is built and `/dev/health` is verified healthy at `https://r5k4xtwcpi.execute-api.ap-southeast-1.amazonaws.com/dev/health`
+- Singapore `aws_dev` backend/API path is built and `/dev/health` is verified healthy at `https://r5k4xtwcpi.execute-api.ap-southeast-1.amazonaws.com/dev/health`; latest recheck on 2026-08-17 IST returned `200 healthy`
+- Latest local/feature-branch latency code is not confirmed deployed to `aws_dev`; confirm a successful `develop` workflow run and deployed Lambda image/update before declaring latency resolved
 - Current target direction: maintain a full Singapore dev stack, including `ashmi-dev-frontend-sg`, `ashmi-dev-assets-sg`, Singapore backend/API/Lambdas/ECR, SG SSM parameter names, and a dedicated SG CloudFront frontend distribution.
 - Legacy Mumbai dev resources should remain only until SG validation/cutover is complete, then be deleted from AWS.
 
@@ -678,6 +684,7 @@ Always re-check these instead of trusting old chat memory:
 
 1. Full Singapore `aws_dev` stack consistency is not yet complete
    - backend/API health is validated in Singapore
+   - latest code deployment to `aws_dev` is not confirmed by the 2026-08-17 checks; the backend Lambda `LastModified` value still needed comparison against the latest successful GitHub Actions run
    - frontend bucket, SG CloudFront distribution, image pipeline wiring, and GitHub `aws_dev` variables/secrets still need to be aligned to the SG stack
    - after cutover, validate admin auth/dashboard latency before further optimization
 
@@ -723,7 +730,7 @@ When starting a new session in this repo, assume the following until disproved:
 
 1. Dev deploy path is GitHub Actions on push to `develop`
 2. Target dev backend is `ashmi-backend-dev-sg`; legacy Mumbai backend `ashmi-backend-dev` is migration-only until deleted
-3. Singapore backend health is verified at `https://r5k4xtwcpi.execute-api.ap-southeast-1.amazonaws.com/dev/health`
+3. Singapore backend health is verified at `https://r5k4xtwcpi.execute-api.ap-southeast-1.amazonaws.com/dev/health`; latest 2026-08-17 IST check returned `200 healthy`
 4. Target direction is a full Singapore dev stack, including `ashmi-dev-frontend-sg`, `ashmi-dev-assets-sg`, SG backend/API/Lambdas/ECR, SG SSM parameters, and a dedicated SG CloudFront distribution
 5. Mumbai-related AWS resources should be treated as legacy and deleted after Singapore migration validation/cutover
 6. Local login issues should first be debugged as runtime-health issues before auth-data issues
