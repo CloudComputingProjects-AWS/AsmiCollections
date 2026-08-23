@@ -8,15 +8,14 @@ All public-facing (no admin auth required).
 import math
 from decimal import Decimal
 
-from sqlalchemy import Float, Integer, and_, cast, func, or_, select, text
+from sqlalchemy import Float, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, with_loader_criteria
 
 from app.models.models import (
     AttributeDefinition,
     Category,
     Product,
-    ProductImage,
     ProductVariant,
     Review,
     SizeGuide,
@@ -37,6 +36,28 @@ _SIZE_ORDER = {
 def _sort_sizes(sizes: list[str]) -> list[str]:
     """Sort sizes in logical order: S→XL, 4-6→16+, 26→38. Unknown sizes go last alphabetically."""
     return sorted(sizes, key=lambda s: (_SIZE_ORDER.get(s, 999), s))
+
+
+def _in_stock_product_clause():
+    return Product.id.in_(
+        select(ProductVariant.product_id).where(
+            ProductVariant.deleted_at.is_(None),
+            ProductVariant.is_active.is_(True),
+            ProductVariant.stock_quantity > 0,
+        )
+    )
+
+
+def _public_variant_loader_criteria():
+    return with_loader_criteria(
+        ProductVariant,
+        lambda variant: and_(
+            variant.deleted_at.is_(None),
+            variant.is_active.is_(True),
+            variant.stock_quantity > 0,
+        ),
+        include_aliases=True,
+    )
 
 
 class CatalogServiceError(Exception):
@@ -64,11 +85,16 @@ class CatalogService:
         featured_q = (
             select(Product)
             .where(
-                Product.is_featured == True,
-                Product.is_active == True,
+                Product.is_featured.is_(True),
+                Product.is_active.is_(True),
                 Product.deleted_at.is_(None),
+                _in_stock_product_clause(),
             )
-            .options(selectinload(Product.images), selectinload(Product.variants))
+            .options(
+                selectinload(Product.images),
+                selectinload(Product.variants),
+                _public_variant_loader_criteria(),
+            )
             .limit(8)
         )
         featured_result = await self.db.execute(featured_q)
@@ -77,7 +103,7 @@ class CatalogService:
         # Categories grouped by gender
         cat_q = (
             select(Category)
-            .where(Category.is_active == True, Category.deleted_at.is_(None))
+            .where(Category.is_active.is_(True), Category.deleted_at.is_(None))
             .order_by(Category.sort_order, Category.name)
         )
         cat_result = await self.db.execute(cat_q)
@@ -105,7 +131,7 @@ class CatalogService:
     ) -> list:
         """Browse categories by gender → age group → subcategory."""
         query = select(Category).where(
-            Category.is_active == True, Category.deleted_at.is_(None)
+            Category.is_active.is_(True), Category.deleted_at.is_(None)
         )
         if gender:
             query = query.where(Category.gender == gender)
@@ -126,7 +152,7 @@ class CatalogService:
         result = await self.db.execute(
             select(Category).where(
                 Category.slug == slug,
-                Category.is_active == True,
+                Category.is_active.is_(True),
                 Category.deleted_at.is_(None),
             )
         )
@@ -172,8 +198,9 @@ class CatalogService:
         """
         # ══ Build shared filter conditions ══
         base_conditions = [
-            Product.is_active == True,
+            Product.is_active.is_(True),
             Product.deleted_at.is_(None),
+            _in_stock_product_clause(),
         ]
         needs_category_join = False
 
@@ -205,7 +232,7 @@ class CatalogService:
         if size or color:
             variant_conditions = [
                 ProductVariant.deleted_at.is_(None),
-                ProductVariant.is_active == True,
+                ProductVariant.is_active.is_(True),
                 ProductVariant.stock_quantity > 0,
             ]
             if size:
@@ -265,7 +292,6 @@ class CatalogService:
             count_query = count_query.where(search_condition)
         if rating_subquery_clause is not None:
             count_query = count_query.where(rating_subquery_clause)
-
         total_result = await self.db.execute(count_query)
         total = total_result.scalar() or 0
 
@@ -275,7 +301,11 @@ class CatalogService:
         data_query = (
             select(Product)
             .where(*base_conditions)
-            .options(selectinload(Product.images), selectinload(Product.variants))
+            .options(
+                selectinload(Product.images),
+                selectinload(Product.variants),
+                _public_variant_loader_criteria(),
+            )
         )
         if needs_category_join:
             data_query = data_query.join(Category, Product.category_id == Category.id)
@@ -287,7 +317,6 @@ class CatalogService:
             data_query = data_query.where(search_condition)
         if rating_subquery_clause is not None:
             data_query = data_query.where(rating_subquery_clause)
-
         # ── Sort ──
         effective_price = func.coalesce(Product.sale_price, Product.base_price)
         sort_map = {
@@ -326,10 +355,15 @@ class CatalogService:
             select(Product)
             .where(
                 Product.slug == slug,
-                Product.is_active == True,
+                Product.is_active.is_(True),
                 Product.deleted_at.is_(None),
+                _in_stock_product_clause(),
             )
-            .options(selectinload(Product.images), selectinload(Product.variants))
+            .options(
+                selectinload(Product.images),
+                selectinload(Product.variants),
+                _public_variant_loader_criteria(),
+            )
         )
         product = result.scalar_one_or_none()
         if not product:
@@ -342,7 +376,7 @@ class CatalogService:
                 func.count(Review.id).label("review_count"),
             ).where(
                 Review.product_id == product.id,
-                Review.is_approved == True,
+                Review.is_approved.is_(True),
             )
         )
         rating_row = rating_result.one()
@@ -350,7 +384,7 @@ class CatalogService:
         # Filter active, non-deleted, in-stock variants
         active_variants = [
             v for v in product.variants
-            if v.is_active and v.deleted_at is None
+            if v.is_active and v.deleted_at is None and v.stock_quantity > 0
         ]
 
         # Get available sizes and colors
@@ -387,10 +421,15 @@ class CatalogService:
             select(Product)
             .where(
                 Product.id == product_id,
-                Product.is_active == True,
+                Product.is_active.is_(True),
                 Product.deleted_at.is_(None),
+                _in_stock_product_clause(),
             )
-            .options(selectinload(Product.images), selectinload(Product.variants))
+            .options(
+                selectinload(Product.images),
+                selectinload(Product.variants),
+                _public_variant_loader_criteria(),
+            )
         )
         product = result.scalar_one_or_none()
         if not product:
@@ -442,7 +481,7 @@ class CatalogService:
         """
         query = (
             select(AttributeDefinition)
-            .where(AttributeDefinition.is_filterable == True)
+            .where(AttributeDefinition.is_filterable.is_(True))
             .order_by(AttributeDefinition.sort_order)
         )
         result = await self.db.execute(query)
@@ -472,8 +511,9 @@ class CatalogService:
         result = await self.db.execute(
             select(Product.title, Product.slug, Product.brand)
             .where(
-                Product.is_active == True,
+                Product.is_active.is_(True),
                 Product.deleted_at.is_(None),
+                _in_stock_product_clause(),
                 or_(
                     Product.title.ilike(f"%{query_str}%"),
                     Product.brand.ilike(f"%{query_str}%"),
@@ -491,18 +531,24 @@ class CatalogService:
     # AVAILABLE FILTER VALUES
     # ══════════════════════════════════════
 
-    async def get_available_brands(self) -> list[str]:
+    async def get_available_brands(self, category_id: str | None = None, gender: str | None = None) -> list[str]:
         """Get distinct brands for filter sidebar."""
-        result = await self.db.execute(
+        query = (
             select(Product.brand)
             .where(
-                Product.is_active == True,
+                Product.is_active.is_(True),
                 Product.deleted_at.is_(None),
                 Product.brand.isnot(None),
+                _in_stock_product_clause(),
             )
             .distinct()
             .order_by(Product.brand)
         )
+        if category_id:
+            query = query.where(Product.category_id == category_id)
+        if gender:
+            query = query.join(Category, Product.category_id == Category.id).where(Category.gender == gender)
+        result = await self.db.execute(query)
         return [r[0] for r in result.all() if r[0]]
 
     async def get_available_sizes(self, category_id: str | None = None, gender: str | None = None) -> list[str]:
@@ -512,9 +558,10 @@ class CatalogService:
             .join(Product, ProductVariant.product_id == Product.id)
             .where(
                 ProductVariant.deleted_at.is_(None),
-                ProductVariant.is_active == True,
+                ProductVariant.is_active.is_(True),
+                ProductVariant.stock_quantity > 0,
                 ProductVariant.size.isnot(None),
-                Product.is_active == True,
+                Product.is_active.is_(True),
                 Product.deleted_at.is_(None),
             )
             .distinct()
@@ -533,9 +580,10 @@ class CatalogService:
             .join(Product, ProductVariant.product_id == Product.id)
             .where(
                 ProductVariant.deleted_at.is_(None),
-                ProductVariant.is_active == True,
+                ProductVariant.is_active.is_(True),
+                ProductVariant.stock_quantity > 0,
                 ProductVariant.color.isnot(None),
-                Product.is_active == True,
+                Product.is_active.is_(True),
                 Product.deleted_at.is_(None),
             )
             .distinct()

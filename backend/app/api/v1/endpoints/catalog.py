@@ -15,13 +15,9 @@ from app.schemas.catalog import (
     AutocompleteItem,
     CatalogListResponse,
     CategoryPublic,
-    FilterOptionsResponse,
-    LandingPageResponse,
-    ProductDetailResponse,
     PublicProductListItem,
     PublicProductImage,
     PublicVariant,
-    ColorOption,
 )
 from app.schemas.product import (
     AttributeDefinitionResponse,
@@ -273,7 +269,7 @@ async def get_filter_options(
     service = CatalogService(db)
     cat_str = str(category_id) if category_id else None
 
-    brands = await service.get_available_brands()
+    brands = await service.get_available_brands(cat_str, gender=gender)
     sizes = await service.get_available_sizes(cat_str, gender=gender)
     colors = await service.get_available_colors(cat_str, gender=gender)
     attributes = await service.get_filterable_attributes(cat_str)
