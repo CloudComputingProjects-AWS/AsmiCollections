@@ -11,7 +11,7 @@ SECURITY (Updated 05-Mar-2026 S20):
 
 SameSite policy by ENVIRONMENT value:
   development  â€” SameSite=Strict,  Secure=False  (local machine, same-origin HTTP)
-  aws_dev      â€” SameSite=Strict,  Secure=True   (cross-origin: S3 + API Gateway)
+  aws_dev      â€” SameSite=None,  Secure=True   (cross-origin: S3 + API Gateway)
   production   â€” SameSite=Strict,  Secure=True   (same-origin via CloudFront)
 """
 
@@ -62,7 +62,7 @@ def _get_cookie_security_params() -> tuple[str, bool]:
       Local machine. Frontend (localhost:3000) and backend (localhost:8000)
       are same-origin context. HTTP is fine. SameSite=Strict is most secure.
 
-    aws_dev      -> ("strict", True)
+    aws_dev      -> ("none", True)
       CloudFront dual-origin serves both frontend and API on the same domain.
       Cross-origin issue does not exist. SameSite=Strict is restored.
       HTTPS enforced by CloudFront.
@@ -78,7 +78,7 @@ def _get_cookie_security_params() -> tuple[str, bool]:
     if env == "development":
         return "strict", False
     elif env == "aws_dev":
-        return "strict", True
+        return "none", True
     else:
         # production or any unrecognised value
         return "strict", True
