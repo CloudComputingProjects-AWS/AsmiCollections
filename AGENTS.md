@@ -216,6 +216,8 @@ These resources define the full `ap-southeast-1` dev stack direction. Use them a
   - architecture: `x86_64`
   - memory: `512 MB`
   - timeout: `30 seconds`
+  - AWS account Lambda concurrent execution quota in `ap-southeast-1`: `1000`
+  - reserved concurrency for `ashmi-backend-dev-sg`: `400`
 - Singapore backend HTTP API:
   - name: `ashmi-backend-dev-sg-api`
   - API ID: `r5k4xtwcpi`
@@ -231,15 +233,20 @@ These resources define the full `ap-southeast-1` dev stack direction. Use them a
     - public API Gateway `/dev/health`: `200`
     - direct Lambda invoke for `ashmi-backend-dev-sg`: app-level `200 healthy`
   - a transient public API Gateway `500` was observed immediately before the successful 2026-08-17 recheck, while direct Lambda health was healthy; if this recurs, inspect API Gateway/Lambda invocation path and logs before assuming app-code failure
+  - after the 2026-08-17 GitHub/Lambda environment cleanup, browser check returned:
+    - `200`
+    - `{"status":"healthy","version":"2.5.0","environment":"aws_dev"}`
 - Singapore frontend S3 bucket for full SG dev stack:
   - `ashmi-dev-frontend-sg`
 - Singapore assets S3 bucket:
   - `ashmi-dev-assets-sg`
 - Singapore CloudFront distribution:
-  - create/configure a dedicated SG dev distribution, then store its distribution ID in GitHub `aws_dev` as `CLOUDFRONT_DISTRIBUTION_ID`
-  - the distribution should use `ashmi-dev-frontend-sg` as the frontend origin
-  - the public CloudFront domain must become the `FRONTEND_URL` value for SG validation
-  - `IMAGE_CDN_DOMAIN` should use the SG CloudFront domain if the same distribution exposes `uploads/processed/...`, otherwise use the selected SG assets CDN domain
+  - current SG dev distribution ID observed in GitHub `aws_dev`:
+    - `E3TY6IMS9QZRVN`
+  - current SG dev frontend CloudFront domain:
+    - `https://db5l55bfhn85l.cloudfront.net`
+  - browser validation on 2026-08-17 showed the Ashmi frontend loading from this domain
+  - `FRONTEND_URL`, `CORS_ORIGINS`, and `IMAGE_CDN_DOMAIN` should remain aligned to the active SG CloudFront domain as appropriate
 - Singapore frontend API base secret:
   - `VITE_API_URL=https://r5k4xtwcpi.execute-api.ap-southeast-1.amazonaws.com/dev/api/v1`
 - Singapore SSM dev parameter names:
@@ -293,6 +300,9 @@ Important Singapore API Gateway / Lambda lessons:
 - `CORS_ORIGINS` should be JSON-list shaped and must include the active SG CloudFront frontend origin, for example:
   - `["https://<sg-dev-cloudfront-domain>"]`
 - `FRONTEND_URL` should also be the active SG CloudFront frontend origin so password-reset links point to the SG stack.
+- `TRUSTED_HOSTS` should be JSON-list shaped and contain hostnames only, not URL origins. For the current SG dev stack:
+  - `["localhost","127.0.0.1","*.execute-api.ap-southeast-1.amazonaws.com","db5l55bfhn85l.cloudfront.net"]`
+  - do not use `https://db5l55bfhn85l.cloudfront.net` inside `TRUSTED_HOSTS`; that causes `Invalid host header`
 - Do not set `AWS_REGION` manually in Lambda environment variables.
 
 ## GitHub Environment Contract
@@ -360,6 +370,9 @@ Therefore, backend SSM parameter names, AWS protection expectation values, and o
 
 Important Lambda environment rule:
 
+- GitHub `aws_dev` variables are deployment-time source of truth; Lambda environment variables are the runtime copy used by `ashmi-backend-dev-sg`.
+- After changing GitHub `aws_dev` variables such as `DATABASE_URL_PARAM`, `DATABASE_URL_SYNC_PARAM`, `IMAGE_CALLBACK_SECRET_PARAM`, `TRUSTED_HOSTS`, `FRONTEND_URL`, or `CORS_ORIGINS`, rerun `deploy-dev-v3.yml` so the workflow syncs them into the backend Lambda runtime environment.
+- If the live API still shows old SSM parameter names or old host validation behavior after GitHub values are corrected, inspect the live Lambda environment variables before debugging code.
 - Keep `AWS_REGION=ap-southeast-1` as a GitHub `aws_dev` variable for the SG dev stack because AWS CLI commands need `--region`.
 - Do not include `AWS_REGION` inside the Lambda `Environment.Variables` update payload.
 - Lambda provides `AWS_REGION` automatically at runtime and rejects attempts to set it manually because it is a reserved key.
@@ -377,6 +390,10 @@ Important Lambda environment rule:
   - AWS Lambda should provide `DATABASE_URL_PARAM`, `DATABASE_URL_SYNC_PARAM`, and `IMAGE_CALLBACK_SECRET_PARAM`
   - backend code must resolve `_PARAM` names from AWS SSM Parameter Store before use
   - image processor Lambda code should use `IMAGE_CALLBACK_SECRET_PARAM`; any old raw `IMAGE_CALLBACK_SECRET` Lambda environment variable is stale cleanup only and should not be used by code
+- Verified 2026-08-17 troubleshooting lesson:
+  - an SSM `AccessDeniedException` for `/ashmi/dev/database-url` was not JWT-related
+  - it meant the live Lambda runtime was still trying to read the old non-SG parameter name
+  - the fix was to align GitHub `aws_dev` variables and the live `ashmi-backend-dev-sg` Lambda environment with the SG parameter names, and ensure `ashmi-lambda-role` had `ssm:GetParameter`/`ssm:GetParameters` for those SG parameter ARNs
 
 ### Database URLs
 
@@ -405,6 +422,10 @@ Important Lambda environment rule:
 - If using SSM in `aws_dev`:
   - the SecureString value stored at `DATABASE_URL_PARAM` must be the full async URL above
   - the SecureString value stored at `DATABASE_URL_SYNC_PARAM` must be the full sync URL above
+- For `asyncpg`, do not include `?sslmode=require` in the async SSM URL; the backend code supplies async SSL through driver connect args.
+- Prior 2026-08-19 AWS dev failures were caused by malformed SSM database URL values:
+  - a newline in `/ashmi/dev/database-url-sg` made the database name resolve incorrectly
+  - `?sslmode=require` in the asyncpg URL caused `TypeError: connect() got an unexpected keyword argument 'sslmode'`
 - If Neon shows a pooled host like `ep-xxx-pooler...`, remove `-pooler` or turn connection pooling off in the Neon connection modal to get the direct host
 - Cross-region latency was the reason for the SG migration; after full SG cutover, compare endpoint timings before adding more app-level optimization
 
@@ -449,6 +470,16 @@ Important details:
 ### WAF / CloudFront validation details
 
 - CloudFront-associated WAFv2 Web ACLs are global scope and are managed through `us-east-1`, even when app resources are in `ap-southeast-1`.
+- Current SG CloudFront distribution `E3TY6IMS9QZRVN` is associated with Web ACL:
+  - `arn:aws:wafv2:us-east-1:762813627344:global/webacl/CreatedByCloudFront-32e3c457/393375cc-b355-4e50-a1fe-5b044f886b2e`
+- On 2026-08-17, IAM simulation for `GitHubActions-Ashmiwebportal-Deploy-Dev` showed `wafv2:GetWebACL` is allowed for the SG Web ACL, so the remaining validation failure is not an IAM deny.
+- On 2026-08-17, the SG Web ACL rules inspected from AWS contained only managed rule groups:
+  - `AWSManagedRulesAmazonIpReputationList`
+  - `AWSManagedRulesCommonRuleSet`
+  - `AWSManagedRulesKnownBadInputsRuleSet`
+- Earlier on 2026-08-17, the workflow failed closed with `CloudFront WAF has no top-level rate-based rules`; after subsequent AWS/GitHub variable cleanup, `deploy-dev-v3.yml` completed successfully.
+- If this validation failure recurs, confirm the SG Web ACL has a top-level `RateBasedStatement` with `Action.Block`.
+- In the AWS WAF console, use `AWS WAF -> Protection packs (web ACLs) -> CreatedByCloudFront-32e3c457 -> Rules`; do not use `AWS Shield -> Overview` for this Web ACL edit.
 - Legacy Mumbai CloudFront Web ACL observed from distribution `E32QTT8QPXCW64`:
   - `arn:aws:wafv2:us-east-1:762813627344:global/webacl/CreatedByCloudFront-2e10ea00/9367cc21-b3c2-4187-83a3-2ac4dce74d8e`
 - When parsing that ARN after `cut -d: -f6`, the slash fields are:
@@ -554,8 +585,14 @@ Current project direction is AWS-side protection, not app-side Redis middleware.
 - Stage name:
   - `dev`
 - Expected default API throttling baseline:
-  - burst: `10`
-  - rate: `5`
+  - burst: `5000`
+  - rate: `2500`
+- API Gateway account throttling observed in `ap-southeast-1`:
+  - burst: `5000`
+  - rate: `10000`
+- Lambda concurrency baseline for the SG dev load-test path:
+  - account concurrent execution quota: `1000`
+  - `ashmi-backend-dev-sg` reserved concurrency: `400`
 - SG CloudFront distribution:
   - to be created/configured for the full SG dev stack and then stored in GitHub `aws_dev` as `CLOUDFRONT_DISTRIBUTION_ID`
 - WAF protections required before treating SG dev as fully cut over:
@@ -570,6 +607,41 @@ Current project direction is AWS-side protection, not app-side Redis middleware.
   - API ID `9amq4q9qa4`
   - CloudFront distribution `E32QTT8QPXCW64`
   - Web ACL `CreatedByCloudFront-2e10ea00`
+
+### Verified `aws_dev` load-test findings
+
+- Load-test tool:
+  - k6 installed on Windows at `C:\Program Files\k6\k6.exe`
+  - test script: [tests/load/ashmi-2000-users.k6.js](C:/Ashmiwebportal/tests/load/ashmi-2000-users.k6.js)
+- Current Neon plan used for AWS dev testing:
+  - Neon Free plan
+  - Free plan is suitable for smoke/cautious dev testing, not proof of 2,000 production users
+- Verified clean public-catalog load-test results on 2026-08-19:
+  - `50` VUs for `5m`: `http_req_failed_rate=0`, `429_count=0`, `5xx_count=0`, `p95_ms=259.035675`
+  - `100` VUs for `5m`: `http_req_failed_rate=0`, `429_count=0`, `5xx_count=0`, `p95_ms=321.0658`
+  - `250` VUs for `3m`: `http_req_failed_rate=0`, `429_count=0`, `5xx_count=0`, `p95_ms=373.83563`
+  - `500` VU load-stage run after raising backend Lambda reserved concurrency to `400`: `http_reqs=131549`, `http_req_failed_rate=0`, `429_count=0`, `5xx_count=0`, `p95_ms=300.39404`
+  - `500` VU confirmation run after raising backend Lambda reserved concurrency to `400`: `http_reqs=131584`, `http_req_failed_rate=0`, `429_count=0`, `5xx_count=0`, `p95_ms=297.22547`
+- Proven 250 VU failure root cause before raising reserved concurrency:
+  - with `ashmi-backend-dev-sg` reserved concurrency at `150`, k6 reported `5xx_count=1123`
+  - the same test window showed API Gateway `5xx Sum=1123`
+  - the same test window showed Lambda `Throttles Sum=1123`
+  - Lambda `ConcurrentExecutions Maximum=150`, exactly matching the reserved concurrency cap
+  - Lambda `Errors Sum=0`, and Lambda logs had no matching `ERROR`, `Exception`, or `Traceback`
+  - therefore the root cause was Lambda reserved concurrency throttling, surfaced to the client as API Gateway `5xx`; it was not API Gateway rate/burst throttling because `429_count=0`
+- Proven 500 VU confirmation failure root cause before raising reserved concurrency from `250` to `400`:
+  - with `ashmi-backend-dev-sg` reserved concurrency at `250`, one 500 VU confirmation run reported `5xx_count=99`
+  - the same test window showed Lambda `Throttles Sum=99`
+  - Lambda `ConcurrentExecutions Maximum=250`, exactly matching the reserved concurrency cap
+  - Lambda `Errors Sum=0`
+  - after raising reserved concurrency to `400`, two subsequent 500 VU runs were clean with `http_req_failed_rate=0`, `429_count=0`, and `5xx_count=0`
+- Current accepted SG dev ceiling:
+  - `500` concurrent k6 virtual users for the public catalogue scenario
+  - API Gateway `rate=2500`, `burst=5000`
+  - Lambda account concurrency quota `1000`
+  - backend Lambda reserved concurrency `400`
+  - Neon Free plan
+- Do not treat `2000` VUs as validated until separate clean test evidence exists.
 
 ## Known Operational Findings Carried Forward
 
@@ -615,6 +687,10 @@ From earlier validated handoff context:
   - [PRODUCTION_DEPLOYMENT_RUNBOOK_2026-04-22.md](C:/Ashmiwebportal/PRODUCTION_DEPLOYMENT_RUNBOOK_2026-04-22.md)
 - Current dev deploy workflow:
   - [.github/workflows/deploy-dev-v3.yml](C:/Ashmiwebportal/.github/workflows/deploy-dev-v3.yml)
+- AWS dev module and 2,000-concurrent-user test plan:
+  - [output/pdf/aws_dev_module_test_plan_2000_users.pdf](C:/Ashmiwebportal/output/pdf/aws_dev_module_test_plan_2000_users.pdf)
+  - Created on 2026-08-17 after SG deployment and health check passed
+  - Treat it as a test execution plan and evidence checklist, not proof that 2,000 concurrent users have already been validated
 
 ## Observability
 
@@ -667,6 +743,7 @@ Always re-check these instead of trusting old chat memory:
 - Neon region mismatch remains only for the legacy Mumbai app stack; target dev direction is full Singapore alignment
 - Route-scoped Origin policy previously had a verified live-route gap on `POST /api/v1/admin/refunds`; current code now protects that route with `Depends(require_trusted_origin)`
 - Route-scoped Origin policy currently has no repo-local automated tests under `backend/app/tests`
+- 2,000-concurrent-user capacity is not yet proven; execute the PDF load-test plan and capture AWS/Neon evidence before claiming that capacity
 
 ## Current Blockers / Next Priorities
 
@@ -674,19 +751,20 @@ Always re-check these instead of trusting old chat memory:
 
 - GitHub Actions dev deployment is working from `develop`
 - Frontend, backend, and image-processor deploy jobs have run successfully in recent `aws_dev` rollout work
+- On 2026-08-17, `deploy-dev-v3.yml` completed successfully via manual workflow dispatch after correcting SG stack variables such as backend Lambda name, backend ECR repository, SG SSM parameter names, and runtime host settings
 - Admin login and 2FA have worked in `aws_dev` during prior validation, but re-validation may still be needed after any auth or env change
 - Singapore `aws_dev` backend/API path is built and `/dev/health` is verified healthy at `https://r5k4xtwcpi.execute-api.ap-southeast-1.amazonaws.com/dev/health`; latest recheck on 2026-08-17 IST returned `200 healthy`
-- Latest local/feature-branch latency code is not confirmed deployed to `aws_dev`; confirm a successful `develop` workflow run and deployed Lambda image/update before declaring latency resolved
-- Current target direction: maintain a full Singapore dev stack, including `ashmi-dev-frontend-sg`, `ashmi-dev-assets-sg`, Singapore backend/API/Lambdas/ECR, SG SSM parameter names, and a dedicated SG CloudFront frontend distribution.
+- Current SG frontend is reachable at `https://db5l55bfhn85l.cloudfront.net`
+- Latest local/feature-branch latency code still needs admin-dashboard timing validation before declaring latency resolved
+- Current target direction: maintain a full Singapore dev stack, including `ashmi-dev-frontend-sg`, `ashmi-dev-assets-sg`, Singapore backend/API/Lambdas/ECR, SG SSM parameter names, and the dedicated SG CloudFront frontend distribution.
 - Legacy Mumbai dev resources should remain only until SG validation/cutover is complete, then be deleted from AWS.
 
 ### Current blockers
 
-1. Full Singapore `aws_dev` stack consistency is not yet complete
-   - backend/API health is validated in Singapore
-   - latest code deployment to `aws_dev` is not confirmed by the 2026-08-17 checks; the backend Lambda `LastModified` value still needed comparison against the latest successful GitHub Actions run
-   - frontend bucket, SG CloudFront distribution, image pipeline wiring, and GitHub `aws_dev` variables/secrets still need to be aligned to the SG stack
-   - after cutover, validate admin auth/dashboard latency before further optimization
+1. Full functional validation is still incomplete even though deployment and health are green
+   - frontend and backend smoke checks passed on the SG stack
+   - admin auth/2FA, dashboard latency, product image processing, checkout, payment, webhook, invoice, return/refund, privacy, and admin settings flows still need module-level re-testing against the live SG `aws_dev` stack
+   - health success only proves startup/routing/config at smoke level, not full business workflow correctness
 
 2. Local auth troubleshooting can still be confused by runtime mode mismatch
    - host-run backend and Docker backend must not be mixed during login testing
@@ -699,11 +777,9 @@ Always re-check these instead of trusting old chat memory:
 ### Next safest priorities
 
 1. Continue Singapore `aws_dev` migration validation
-   - create/configure `ashmi-dev-frontend-sg`
-   - create/configure dedicated SG CloudFront distribution and point `FRONTEND_URL`, `CORS_ORIGINS`, and `IMAGE_CDN_DOMAIN` at its domain as appropriate
-   - update/create Singapore image processor Lambda and callback URL
-   - wire Singapore S3 image trigger and processed asset path
-   - update GitHub `aws_dev` variables/secrets for the full SG stack only after manual Singapore validation is complete
+   - keep GitHub `aws_dev` variables and Lambda environment variables aligned to SG values
+   - confirm CloudFront distribution `E3TY6IMS9QZRVN` and domain `db5l55bfhn85l.cloudfront.net` remain the active dev frontend target
+   - verify Singapore S3 image trigger and processed asset path end to end
    - re-test admin login
    - admin 2FA
    - `/health`

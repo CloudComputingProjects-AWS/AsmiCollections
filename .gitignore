@@ -48,6 +48,10 @@ htmlcov/
 coverage.xml
 playwright-report/
 test-results/
+backend/tests/
+docs/
+output/
+tests/
 dist/
 build/
 
