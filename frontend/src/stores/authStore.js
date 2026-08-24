@@ -12,10 +12,11 @@
 
 import { create } from 'zustand';
 import apiClient from '../api/apiClient';
+import useCartStore from './cartStore';
 
 export const ADMIN_ROLES = ['admin', 'product_manager', 'order_manager', 'finance_manager'];
 
-const useAuthStore = create((set, get) => ({
+const useAuthStore = create((set) => ({
   user: null,
   loading: true,       // true until initial session check completes
   error: null,
@@ -79,6 +80,7 @@ const useAuthStore = create((set, get) => ({
       // Fetch full user profile (cookies are now set, browser sends them)
       const meRes = await apiClient.get('/auth/me');
       set({ user: meRes.data, loading: false, error: null });
+      await useCartStore.getState().fetchCart();
       return meRes.data;
     } catch (err) {
       set({ loading: false });
@@ -96,6 +98,7 @@ const useAuthStore = create((set, get) => ({
 
       const meRes = await apiClient.get('/auth/me');
       set({ user: meRes.data, loading: false, error: null });
+      await useCartStore.getState().fetchCart();
       return meRes.data;
     } catch (err) {
       set({ loading: false });
@@ -123,6 +126,13 @@ const useAuthStore = create((set, get) => ({
       // Backend logout may fail if token already expired â€” that's fine
     }
     set({ user: null });
+    useCartStore.setState({
+      items: [],
+      cartId: null,
+      itemCount: 0,
+      coupon: null,
+      couponDiscount: 0,
+    });
   },
 
   clearError: () => set({ error: null }),
