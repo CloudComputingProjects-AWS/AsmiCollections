@@ -88,6 +88,9 @@
   - guest cart starts in browser localStorage
   - authenticated cart uses backend cart APIs and Neon DB
   - after login, guest cart is intended to merge into the authenticated server cart
+  - customer header cart count is sourced from [frontend/src/stores/cartStore.js](C:/Ashmiwebportal/frontend/src/stores/cartStore.js) `itemCount`
+  - [frontend/src/components/layout/CustomerHeader.jsx](C:/Ashmiwebportal/frontend/src/components/layout/CustomerHeader.jsx) should fetch the authenticated cart when `user` becomes available and render the cart badge when `itemCount > 0`
+  - [frontend/src/stores/authStore.js](C:/Ashmiwebportal/frontend/src/stores/authStore.js) should refresh cart state after normal login and 2FA login, and clear cart state on logout
 - Checkout behavior:
   - `/cart` is public
   - `/checkout`, `/orders`, `/profile`, and `/addresses` are protected customer routes
@@ -303,6 +306,7 @@ Important Singapore API Gateway / Lambda lessons:
 - `TRUSTED_HOSTS` should be JSON-list shaped and contain hostnames only, not URL origins. For the current SG dev stack:
   - `["localhost","127.0.0.1","*.execute-api.ap-southeast-1.amazonaws.com","db5l55bfhn85l.cloudfront.net"]`
   - do not use `https://db5l55bfhn85l.cloudfront.net` inside `TRUSTED_HOSTS`; that causes `Invalid host header`
+  - do not leave only the legacy Mumbai API wildcard `*.execute-api.ap-south-1.amazonaws.com` in SG `TRUSTED_HOSTS`; the Singapore API Gateway host is under `*.execute-api.ap-southeast-1.amazonaws.com`
 - Do not set `AWS_REGION` manually in Lambda environment variables.
 
 ## GitHub Environment Contract
@@ -499,6 +503,12 @@ Important details:
 - For `aws_dev` named stage `dev`, `VITE_API_URL` must include `/dev/api/v1`.
 - Auth refresh must use the configured Axios client, for example `apiClient.post('/auth/refresh', {})`, not raw `axios.post('/api/v1/auth/refresh', ...)`.
 - A raw browser-relative `/api/v1/...` request from the deployed frontend goes to the CloudFront frontend domain, not directly to API Gateway, unless CloudFront is explicitly configured to route that path to the API origin.
+- Current SG `aws_dev` frontend/API shape is cross-site:
+  - frontend origin: `https://db5l55bfhn85l.cloudfront.net`
+  - API origin: `https://r5k4xtwcpi.execute-api.ap-southeast-1.amazonaws.com`
+  - because these are different sites, browser auth cookies from API Gateway are treated as third-party cookies by Chrome when requests are initiated from the CloudFront frontend.
+- With this cross-site `aws_dev` shape and no CloudFront `/api/*` API origin behavior, `aws_dev` auth cookies must use `SameSite=None; Secure=True; HttpOnly=True`; `SameSite=Strict` causes login/2FA to return `200` but the immediate `/auth/me` call returns `401` because the cookie is not sent.
+- Browser validation can still fail if Chrome blocks third-party cookies for the CloudFront site. If logs show `POST /api/v1/auth/login 200` or `POST /api/v1/auth/2fa/validate 200` followed immediately by `GET /api/v1/auth/me 401`, check DevTools `Cookies` for blocked `access_token` and allow third-party cookies for the dev frontend site.
 
 ## Branch / PR Review Language
 
@@ -538,8 +548,10 @@ Important details:
   - the device clock is off
 ### CSRF / Origin Policy
 
-- Current project direction is to keep `SameSite=Strict` for browser auth cookies
-- Because `SameSite=Strict` is being kept, browser-driven state-changing routes should also enforce strict `Origin` validation
+- Cookie SameSite policy must match frontend/API site topology:
+  - same-site frontend/API topology: prefer `SameSite=Strict; Secure=True`
+  - cross-site frontend/API topology, such as current SG `aws_dev` CloudFront frontend plus direct API Gateway API: use `SameSite=None; Secure=True; HttpOnly=True`
+- Because `SameSite=None` allows cookies on cross-site browser requests, browser-driven state-changing routes must enforce strict `Origin` validation.
 - Do not use one large global allowlist for every runtime path
 - Use route-scoped policy instead:
   - browser-cookie routes such as `/api/v1/auth/`, `/api/v1/auth/2fa/`, and browser-driven admin write routes should require an allowed `Origin`
@@ -562,6 +574,24 @@ Important details:
     - Stripe webhook in [backend/app/api/v1/endpoints/payments.py](C:/Ashmiwebportal/backend/app/api/v1/endpoints/payments.py)
   - previously noted `POST /api/v1/admin/refunds` Origin-policy gap is now protected in current code by `Depends(require_trusted_origin)` in [backend/app/api/v1/endpoints/shipping_returns.py](C:/Ashmiwebportal/backend/app/api/v1/endpoints/shipping_returns.py)
   - no automated Origin-policy test coverage was found under `backend/app/tests`
+
+### Public catalogue stock visibility
+
+- Customer-facing catalogue surfaces should not display products that have no purchasable inventory.
+- Public product visibility rule:
+  - product must be active
+  - product must not be deleted
+  - at least one active, non-deleted variant must have `stock_quantity > 0`
+- Apply this rule in backend public catalogue queries, not only in frontend rendering:
+  - product listing: [backend/app/services/catalog_service.py](C:/Ashmiwebportal/backend/app/services/catalog_service.py)
+  - landing featured products
+  - product detail by slug/id
+  - search autocomplete
+  - public filter options such as brands, sizes, and colors
+- Admin product and inventory pages should still show zero-stock products so stock can be replenished or products can be managed.
+- Product detail for a public slug whose active variants all have zero stock should return `404 Product not found` or an equivalent not-for-sale public response; do not allow Add to Cart for zero-stock variants.
+- Public listing product cards in [frontend/src/components/catalog/ProductCard.jsx](C:/Ashmiwebportal/frontend/src/components/catalog/ProductCard.jsx) should show total purchasable inventory by summing `stock_quantity` across the public `product.variants` payload.
+- When implementing this in SQLAlchemy, build a boolean condition such as `Product.id.in_(select(ProductVariant.product_id).where(...))`; do not pass a subquery object itself directly to `.where(...)`.
 
 ### Rate limiting architecture
 
