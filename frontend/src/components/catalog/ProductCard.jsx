@@ -17,6 +17,10 @@ export default function ProductCard({ product, className = '' }) {
   const discountPct = hasDiscount
     ? Math.round(((product.base_price - product.sale_price) / product.base_price) * 100)
     : 0;
+  const inventoryCount = product.variants?.reduce(
+    (sum, variant) => sum + (Number(variant.stock_quantity) || 0),
+    0
+  ) || 0;
 
 
   return (
@@ -93,6 +97,10 @@ export default function ProductCard({ product, className = '' }) {
             </span>
           )}
         </div>
+
+        <p className={`mt-1 text-xs font-medium ${inventoryCount <= 5 ? 'text-rose-600' : 'text-emerald-700'}`}>
+          {inventoryCount} in stock
+        </p>
 
         {/* Color swatches (if variants have colors) */}
         {product.available_colors && product.available_colors.length > 0 && (
