@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Menu, X, ShoppingBag, User, LogOut,
 } from 'lucide-react';
 import useAuthStore from '../../stores/authStore';
+import useCartStore from '../../stores/cartStore';
 import SearchBar from '../catalog/SearchBar';
 
 const NAV_CATEGORIES = [
@@ -17,7 +18,14 @@ export default function CustomerHeader() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const { user, logout } = useAuthStore();
+  const { itemCount, fetchCart } = useCartStore();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user) {
+      fetchCart();
+    }
+  }, [user, fetchCart]);
 
   const handleLogout = async () => {
     await logout();
@@ -64,7 +72,11 @@ export default function CustomerHeader() {
                   title="Cart"
                 >
                   <ShoppingBag size={20} />
-                  {/* TODO: cart badge count from store */}
+                  {itemCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[11px] font-bold leading-[18px] text-center">
+                      {itemCount > 99 ? '99+' : itemCount}
+                    </span>
+                  )}
                 </Link>
 
                 {/* Profile Menu */}
