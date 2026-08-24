@@ -94,7 +94,17 @@ export default function CheckoutPage() {
     }).format(price || 0);
 
   const selectedAddress = addresses.find((a) => a.id === selectedAddressId);
+  const subtotal = getSubtotal();
+  const discount = couponDiscount || 0;
+  const configuredShippingFee = Number(shippingConfig.shipping_fee || 0);
+  const freeShippingThreshold = Number(shippingConfig.free_shipping_threshold || 0);
 
+  const estimatedShipping =
+    freeShippingThreshold > 0 && subtotal >= freeShippingThreshold
+      ? 0
+      : configuredShippingFee;
+
+  const estimatedGrandTotal = Math.max(0, subtotal + estimatedShipping - discount);
   const openAddModal = () => {
     setEditingAddress(null);
     setShowAddressModal(true);
@@ -360,7 +370,7 @@ export default function CheckoutPage() {
                     disabled={loading}
                     className="w-full mt-4 bg-black text-white py-3.5 rounded-lg font-bold text-base hover:bg-gray-800 transition disabled:opacity-50"
                   >
-                    {loading ? 'Placing Order...' : `Place Order \u2014 ${formatPrice(orderSummary?.grand_total || getSubtotal())}`}
+                    {loading ? 'Placing Order...' : `Place Order \u2014 ${formatPrice(orderSummary?.grand_total ?? estimatedGrandTotal)}`}
                   </button>
                 )}
 
@@ -444,19 +454,30 @@ export default function CheckoutPage() {
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between text-gray-600">
                     <span>Subtotal</span>
-                    <span>{formatPrice(getSubtotal())}</span>
+                    <span>{formatPrice(subtotal)}</span>
                   </div>
-                  {couponDiscount > 0 && (
+
+                  <div className="flex justify-between text-gray-600">
+                    <span>Shipping</span>
+                    <span className={estimatedShipping === 0 ? 'text-green-600 font-medium' : ''}>
+                      {estimatedShipping === 0 ? 'FREE' : formatPrice(estimatedShipping)}
+                    </span>
+                  </div>
+
+                  {discount > 0 && (
                     <div className="flex justify-between text-green-600">
                       <span>Discount</span>
-                      <span>-{formatPrice(couponDiscount)}</span>
+                      <span>-{formatPrice(discount)}</span>
                     </div>
                   )}
+
                   <hr />
+
                   <div className="flex justify-between font-bold text-gray-900">
                     <span>Estimated Total</span>
-                    <span>{formatPrice(getSubtotal() - couponDiscount)}</span>
+                    <span>{formatPrice(estimatedGrandTotal)}</span>
                   </div>
+
                   <p className="text-xs text-gray-400">Tax calculated after selecting address.</p>
                 </div>
               )}
