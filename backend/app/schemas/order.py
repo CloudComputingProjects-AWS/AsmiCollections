@@ -126,6 +126,10 @@ class OrderSummaryResponse(BaseModel):
 class OrderTransitionRequest(BaseModel):
     new_status: str
     reason: str | None = None
+    courier_partner: str | None = Field(None, max_length=50)
+    tracking_number: str | None = Field(None, max_length=200)
+    tracking_url: str | None = Field(None, max_length=1000)
+    shipping_message: str | None = Field(None, max_length=1000)
 
 class StatusHistoryItem(BaseModel):
     id: UUID

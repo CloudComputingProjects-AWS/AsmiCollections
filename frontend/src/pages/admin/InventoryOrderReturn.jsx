@@ -81,14 +81,27 @@ export function OrderManager() {
   const [historyModal, setHistoryModal] = useState(null);
   const [historyData, setHistoryData] = useState([]);
   const [reason, setReason] = useState('');
+  const [shippingDetails, setShippingDetails] = useState({
+    courier_partner: 'manual',
+    tracking_number: '',
+    tracking_url: '',
+    shipping_message: '',
+  });
 
   useEffect(() => { fetchOrders({ page, limit: 20, search, ...filters }); }, [page, search, filters]);
 
   const handleTransition = async (orderId, newStatus) => {
     try {
-      await transitionOrder(orderId, newStatus, reason);
+      const extra = newStatus === 'shipped' ? shippingDetails : {};
+      await transitionOrder(orderId, newStatus, reason, extra);
       setTransitionModal(null);
       setReason('');
+      setShippingDetails({
+        courier_partner: 'manual',
+        tracking_number: '',
+        tracking_url: '',
+        shipping_message: '',
+      });
       fetchOrders({ page, limit: 20, search, ...filters });
     } catch (err) { alert(err.response?.data?.detail || 'Transition failed'); }
   };
@@ -141,6 +154,14 @@ export function OrderManager() {
             ))}
           </div>
           <div><label htmlFor="order-transition-reason" className="block text-sm font-medium mb-1">Reason (optional)</label><input id="order-transition-reason" type="text" value={reason} onChange={(e) => setReason(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
+          {transitionModal?.order_status === 'processing' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div><label htmlFor="shipping-courier" className="block text-sm font-medium mb-1">Courier</label><input id="shipping-courier" type="text" value={shippingDetails.courier_partner} onChange={(e) => setShippingDetails((s) => ({ ...s, courier_partner: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
+              <div><label htmlFor="shipping-tracking-number" className="block text-sm font-medium mb-1">Tracking Number</label><input id="shipping-tracking-number" type="text" value={shippingDetails.tracking_number} onChange={(e) => setShippingDetails((s) => ({ ...s, tracking_number: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
+              <div className="sm:col-span-2"><label htmlFor="shipping-tracking-link" className="block text-sm font-medium mb-1">Tracking Link</label><input id="shipping-tracking-link" type="url" value={shippingDetails.tracking_url} onChange={(e) => setShippingDetails((s) => ({ ...s, tracking_url: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
+              <div className="sm:col-span-2"><label htmlFor="shipping-message" className="block text-sm font-medium mb-1">Shipping Message</label><textarea id="shipping-message" rows={2} value={shippingDetails.shipping_message} onChange={(e) => setShippingDetails((s) => ({ ...s, shipping_message: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
+            </div>
+          )}
         </div>
       </Modal>
 

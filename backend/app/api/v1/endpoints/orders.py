@@ -4,13 +4,14 @@ User: /api/v1/orders/, /api/v1/checkout/, /api/v1/addresses/
 Admin: /api/v1/admin/orders/
 """
 import math
+from datetime import datetime, timezone
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.middleware.auth import get_current_user, require_role
-from app.models.models import User, UserAddress
+from app.models.models import Shipment, User, UserAddress
 from app.schemas.auth import MessageResponse
 from app.schemas.order import (
     AddressCreate, AddressResponse, CheckoutRequest, OrderResponse,
@@ -18,6 +19,7 @@ from app.schemas.order import (
     OrderItemResponse, StatusHistoryItem,
 )
 from app.schemas.product import PaginatedResponse
+from app.services.notification_service import NotificationService
 from app.services.order_service import OrderService, OrderServiceError
 from sqlalchemy import select
 from app.core.origin_policy import require_trusted_origin
@@ -188,6 +190,33 @@ async def admin_transition_order(order_id: UUID, data: OrderTransitionRequest,
     service = OrderService(db)
     try:
         order = await service.transition_order(order_id, data.new_status, user.id, data.reason)
+        if data.new_status == "shipped":
+            result = await db.execute(select(Shipment).where(Shipment.order_id == order.id))
+            shipment = result.scalar_one_or_none()
+            if not shipment:
+                shipment = Shipment(
+                    order_id=order.id,
+                    courier_partner=data.courier_partner or "manual",
+                    status="in_transit",
+                )
+                db.add(shipment)
+            shipment.courier_partner = data.courier_partner or shipment.courier_partner
+            shipment.tracking_number = data.tracking_number or shipment.tracking_number
+            shipment.tracking_url = data.tracking_url or shipment.tracking_url
+            shipment.status = "in_transit"
+            shipment.shipped_at = shipment.shipped_at or datetime.now(timezone.utc)
+            shipment.updated_at = datetime.now(timezone.utc)
+
+            notif = NotificationService(db)
+            await notif.send_shipping_notification(
+                order.id,
+                tracking_url=shipment.tracking_url,
+                tracking_number=shipment.tracking_number,
+                message=data.shipping_message,
+            )
+        elif data.new_status == "delivered":
+            notif = NotificationService(db)
+            await notif.send_delivery_notification(order.id)
         await db.commit()
         return await service.get_order(order.id)
     except OrderServiceError as e:
