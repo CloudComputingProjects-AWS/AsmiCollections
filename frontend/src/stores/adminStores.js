@@ -169,8 +169,8 @@ export const useAdminOrderStore = create((set) => ({
     }
   },
 
-  transitionOrder: async (id, newStatus, reason) => {
-    const res = await orderApi.transition(id, { new_status: newStatus, reason });
+  transitionOrder: async (id, newStatus, reason, extra = {}) => {
+    const res = await orderApi.transition(id, { new_status: newStatus, reason, ...extra });
     return res.data;
   },
 

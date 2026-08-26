@@ -52,6 +52,7 @@ backend/tests/
 docs/
 output/
 tests/
+backend/pytest.ini
 dist/
 build/
 

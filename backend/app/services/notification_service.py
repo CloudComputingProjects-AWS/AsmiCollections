@@ -76,7 +76,13 @@ class NotificationService:
             attachments=[attachment],
         )
 
-    async def send_shipping_notification(self, order_id: UUID, tracking_url: str | None = None) -> bool:
+    async def send_shipping_notification(
+        self,
+        order_id: UUID,
+        tracking_url: str | None = None,
+        tracking_number: str | None = None,
+        message: str | None = None,
+    ) -> bool:
         """Notify customer that order has been shipped."""
         order, user = await self._load_order_user(order_id)
         if not user:
@@ -87,8 +93,12 @@ class NotificationService:
             f"Hi {user.first_name or 'Customer'},\n\n"
             f"Your order {order.order_number} has been shipped!\n"
         )
+        if tracking_number:
+            body += f"Tracking number: {tracking_number}\n"
         if tracking_url:
             body += f"Track your order: {tracking_url}\n"
+        if message:
+            body += f"\n{message}\n"
         body += "\nThank you for shopping with us!"
 
         return await self._send_email(user.email, subject, body, text_body=body)
