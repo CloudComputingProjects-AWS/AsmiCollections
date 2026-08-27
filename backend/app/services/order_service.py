@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import  func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -146,6 +146,8 @@ class OrderService:
         seller_state = await self._get_seller_state()
 
         # Lock variants and check stock
+        locked_variants = {}
+
         for ci, variant, product in cart_items:
             locked = await self.db.execute(
                 select(ProductVariant)
@@ -153,20 +155,27 @@ class OrderService:
                 .with_for_update()
             )
             v = locked.scalar_one()
-            if v.stock_quantity < ci.quantity:
+
+            held_result = await self.db.execute(
+                select(func.coalesce(func.sum(InventoryReservation.reserved_qty), 0))
+                .where(
+                    InventoryReservation.variant_id == variant.id,
+                    InventoryReservation.status == "held",
+                    InventoryReservation.expires_at > datetime.now(timezone.utc),
+                )
+            )
+            held_qty = held_result.scalar() or 0
+            available_qty = v.stock_quantity - held_qty
+
+            if available_qty < ci.quantity:
                 raise OrderServiceError(
-                    f"'{product.title}' ({variant.size}/{variant.color}) â€” only {v.stock_quantity} left.", 400
+                    f"'{product.title}' ({variant.size}/{variant.color}) — only {available_qty} left.",
+                    400,
                 )
 
-        # Create reservations
-        for ci, variant, product in cart_items:
-            reservation = InventoryReservation(
-                variant_id=variant.id, user_id=user_id,
-                reserved_qty=ci.quantity, status="held",
-                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
-            )
-            self.db.add(reservation)
+            locked_variants[variant.id] = v
 
+        
         # Calculate tax
         items_detail, subtotal, tax_data = await self._calc_items_tax(cart_items, seller_state, address.state, address.country)
 
@@ -225,7 +234,17 @@ class OrderService:
         )
         self.db.add(order)
         await self.db.flush()
-
+        # Create reservations
+        for ci, variant, product in cart_items:
+            reservation = InventoryReservation(
+                variant_id=variant.id,
+                order_id=order.id,
+                user_id=user_id,
+                reserved_qty=ci.quantity,
+                status="held",
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            )
+            self.db.add(reservation)
         # Create order items with snapshots
         for ci, variant, product in cart_items:
             img_result = await self.db.execute(
