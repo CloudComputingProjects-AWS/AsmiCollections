@@ -9,6 +9,7 @@ from decimal import Decimal
 from sqlalchemy import  func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import OperationalError
 
 from app.models.models import (
     Cart, CartItem, Coupon, CouponUsage, InventoryReservation,
@@ -149,11 +150,17 @@ class OrderService:
         locked_variants = {}
 
         for ci, variant, product in cart_items:
-            locked = await self.db.execute(
-                select(ProductVariant)
-                .where(ProductVariant.id == variant.id)
-                .with_for_update()
-            )
+            try:
+                locked = await self.db.execute(
+                    select(ProductVariant)
+                    .where(ProductVariant.id == variant.id)
+                    .with_for_update()
+                )
+            except OperationalError:
+                raise OrderServiceError(
+                    "This item is currently being checked out by another customer. Please try again.",
+                    409,
+                )
             v = locked.scalar_one()
 
             held_result = await self.db.execute(
