@@ -7,7 +7,7 @@ Phase 2+: Switch to boto3 SES SDK for production.
 """
 
 import logging
-import smtplib
+import aiosmtplib
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -64,11 +64,14 @@ async def send_email(
             mime_part.add_header("Content-Type", attachment["content_type"])
             msg.attach(mime_part)
 
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-            server.starttls()
-            if settings.SMTP_USER and settings.SMTP_PASSWORD:
-                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.FROM_EMAIL, to_email, msg.as_string())
+        await aiosmtplib.send(
+                msg,
+                hostname=settings.SMTP_HOST,
+                port=settings.SMTP_PORT,
+                username=settings.SMTP_USER or None,
+                password=settings.SMTP_PASSWORD or None,
+                start_tls=True,
+        )
 
         logger.info(f"Email sent to {to_email}: {subject}")
         return True

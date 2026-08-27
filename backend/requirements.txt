@@ -21,7 +21,8 @@ bcrypt==4.0.1
 
 # AWS
 boto3==1.36.4
-
+#for async smtp
+aiosmtplib==4.0.2
 # HTTP Client (for webhooks, shipping APIs)
 httpx==0.28.1
 
