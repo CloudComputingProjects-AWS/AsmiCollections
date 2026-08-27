@@ -110,15 +110,34 @@ class NotificationService:
             return False
 
         subject = f"Order Delivered - {order.order_number}"
-        body = (
+        customer_name = escape(user.first_name or "Customer")
+        order_number = escape(order.order_number)
+        total_amount = escape(f"{order.currency} {order.grand_total}")
+
+        html_body = (
+            "<html><body style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #111827;\">"
+            "<h2 style=\"margin-bottom: 8px;\">Your order has been delivered</h2>"
+            f"<p>Hi {customer_name},<br/></p>"
+            "<p>Your Ashmi Collections order has reached you. We hope everything arrived safely and beautifully.</p>"
+            "<div style=\"background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; padding: 16px; margin: 24px 0;\">"
+            f"<p style=\"margin: 0 0 8px 0;\"><strong>Order number:</strong> {order_number}</p>"
+            f"<p style=\"margin: 0;\"><strong>Order total:</strong> {total_amount}</p>"
+            "</div>"
+            "<p>Thank you for shopping with Ashmi Collections.</p>"
+            "<br/><p>Regards,</p>"
+            "<br/><p>Team Ashmi Collections</p>"
+            "</body></html>"
+        )
+        text_body = (
             f"Hi {user.first_name or 'Customer'},\n\n"
-            f"Your order {order.order_number} has been delivered!\n\n"
-            f"We hope you love your purchase. If you need to return any items, "
-            f"you can do so from your order details page within the return window.\n\n"
-            f"Thank you!"
+            f"Your Ashmi Collections order {order.order_number} has been delivered.\n"
+            f"Order total: {order.currency} {order.grand_total}\n\n"
+            "If something does not look right, you can request a return or exchange "
+            "from your order details page within the return window.\n\n"
+            "Thank you for shopping with Ashmi Collections."
         )
 
-        return await self._send_email(user.email, subject, body, text_body=body)
+        return await self._send_email(user.email, subject, html_body, text_body=text_body)
 
     async def send_return_approved_notification(self, order_id: UUID, pickup_date=None) -> bool:
         """Notify customer that return has been approved."""

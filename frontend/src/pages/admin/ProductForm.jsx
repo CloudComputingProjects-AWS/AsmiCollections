@@ -58,6 +58,7 @@ export default function ProductForm() {
         category_id: product.category_id || '', brand: product.brand || '',
         base_price: product.base_price || '', sale_price: product.sale_price || '',
         hsn_code: product.hsn_code || '', gst_rate: product.gst_rate ?? 5,
+        attributes: product.attributes || {},tags: product.tags || [],
         meta_title: product.meta_title || '', meta_description: product.meta_description || '',
         is_active: product.is_active ?? true, is_featured: product.is_featured ?? false,
       });
@@ -67,7 +68,7 @@ export default function ProductForm() {
   }, [product, isEdit]);
 
   const updateField = (key, value) => setForm((f) => ({ ...f, [key]: value }));
-  const updateAttr = (key, value) => setForm((f) => ({ ...f, attributes: { ...f.attributes, [key]: value } }));
+  const updateAttr = (key, value) => setForm((f) => ({ ...f, attributes: { ...(f.attributes || {}), [key]: value }, }));
   const addVariant = () => setVariants((v) => [...v, { size: '', color: '', color_hex: '#000000', sku: '', stock_quantity: 0, price_override: '', is_new: true }]);
   const updateVariant = (i, key, val) => setVariants((v) => v.map((item, idx) => idx === i ? { ...item, [key]: val } : item));
   const removeVariant = (i) => setVariants((v) => v.filter((_, idx) => idx !== i));
@@ -272,6 +273,22 @@ export default function ProductForm() {
       };
       if (isEdit) {
         await updateProduct(id, payload);
+        for(const v of variants){
+          const variantPayload ={
+             size: v.size || null,
+             color: v.color || null,
+             color_hex: v.color_hex || null,
+             stock_quantity: Number.parseInt(v.stock_quantity, 10) || 0,
+             price_override: v.price_override ? Number.parseFloat(v.price_override) : null,
+             weight_grams: v.weight_grams ? Number.parseInt(v.weight_grams, 10) : null,
+             is_active: v.is_active ?? true,
+          }
+          if (v.is_new) {
+              await variantApi.create(id, variantPayload);
+          } else {
+              await variantApi.update(id, v.id, variantPayload);
+          }
+        }
       } else {
         const created = await createProduct(payload);
         if (variants.length > 0) {
@@ -425,7 +442,7 @@ export default function ProductForm() {
                     {attr.display_name} {attr.is_required && <span className="text-red-500">*</span>}
                   </label>
                   {attr.input_type === 'select' ? (
-                    <select id={fieldId} value={form.attributes[attr.attribute_key] || ''}
+                    <select id={fieldId} value={(form.attributes || {})[attr.attribute_key] || ''}
                       onChange={(e) => updateAttr(attr.attribute_key, e.target.value)}
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none">
                       <option value="">Select {attr.display_name}</option>
@@ -434,7 +451,8 @@ export default function ProductForm() {
                   ) : attr.input_type === 'multiselect' ? (
                     <div className="flex flex-wrap gap-2" role="group" aria-label={attr.display_name}>
                       {(attr.options || []).map((opt) => {
-                        const vals = Array.isArray(form.attributes[attr.attribute_key]) ? form.attributes[attr.attribute_key] : [];
+                        const vals = Array.isArray((form.attributes || {})[attr.attribute_key])
+                        ? (form.attributes || {})[attr.attribute_key]: [];
                         const checked = vals.includes(opt);
                         return (
                           <label key={opt} className="flex items-center gap-1.5 text-sm">
@@ -450,7 +468,7 @@ export default function ProductForm() {
                       })}
                     </div>
                   ) : (
-                    <input id={fieldId} type="text" value={form.attributes[attr.attribute_key] || ''}
+                    <input id={fieldId} type="text" value={(form.attributes || {})[attr.attribute_key] || ''}
                       onChange={(e) => updateAttr(attr.attribute_key, e.target.value)}
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none" />
                   )}

@@ -101,6 +101,36 @@
   - initial payment status is `pending`
   - payment gateway confirmation, polling, or webhook updates payment/order status
   - successful payment should move payment status to `paid` and order status toward confirmed/fulfillment flow
+  - live Razorpay UPI payment validation on the SG `aws_dev` stack passed on 2026-08-25 IST using order `ORD-20260824-DB3C48` / order id `47330275-a3ac-488c-b446-ef55b03e94b8`
+  - Razorpay payment `pay_TTkFKWASfbCqkb` for Razorpay order `order_TTkEQ47p8CAuAb` was captured, recorded in Neon `payment_events` as `payment.captured`, and processed with `processed=true`
+  - same-order payment re-attempt against `/payments/upi/collect` returned `400` with `Cannot initiate payment for order in 'confirmed' status`; the order remained `payment_status=paid`, `order_status=confirmed`, and the original gateway ids were unchanged
+  - current remaining payment hardening is optional/non-blocking for this module: automated webhook replay coverage, concurrent frontend-verify plus webhook race testing, and provider-to-DB reconciliation reporting
+
+### Payment idempotency workflow
+
+Use idempotency to ensure that one intended payment operation creates one business outcome, even when an app, network, or gateway retries a request.
+
+- Treat these as distinct cases:
+  - duplicate client payment initiation: the same customer request is sent again because of a double-click or retry
+  - duplicate webhook delivery: the gateway sends the same provider event again because it did not receive a timely `HTTP 200 OK`
+  - genuine second payment: the gateway has a different payment/event ID because the customer actually paid again
+- Client payment initiation should use a stable idempotency key scoped to the customer, order, and payment operation. Reuse that key only for a retry of the same attempt.
+- Build a request fingerprint from immutable request details such as order ID, amount, currency, and payment operation. A reused key with a different fingerprint is a conflict, not a valid duplicate.
+- Claim a new key atomically in durable storage, including the request fingerprint and an initial `processing` state. Use a database uniqueness guarantee and handle the unique-conflict path; a read-before-insert check alone is not sufficient under concurrent requests.
+- For an existing client key:
+  - matching fingerprint and `completed` state: return the stored result; do not create another gateway payment
+  - matching fingerprint and `processing` state: return an in-progress result or wait for the stored result; do not start the operation again
+  - matching fingerprint and terminal failure: return the stored failure and apply the defined retry policy
+  - mismatched fingerprint: reject or alert; never reuse one idempotency key for a different payment request
+- A new client key must still pass the order-level guard. Do not start another payment if the order is already paid or confirmed.
+- Webhook processing is a separate idempotency boundary:
+  - verify the provider signature before any lookup or business action
+  - use the provider event/payment ID as `payment_events.gateway_event_id`
+  - record and compare the webhook payload fingerprint (`payload_hash`) before classifying an existing event as a safe replay
+  - atomically claim the new event, track `processing` and `completed` state, and execute payment/order/stock/history changes in one transaction boundary
+  - for a matching, already-completed event, perform no business action and return `HTTP 200 OK` from the backend to the payment gateway
+- A genuine second gateway payment has a different provider event ID, so event-level idempotency alone cannot stop it. The order-level paid/confirmed guard must prevent repeated order confirmation, stock deduction, invoice generation, and notification; retain the extra payment for reconciliation or refund.
+- `payment_events` currently stores `gateway_event_id`, `payload_hash`, `processed`, and `processed_at`. It is retained with financial records; there is no explicit TTL/expiry column today. Define a finance/audit retention period and expire records only after that policy period and reconciliation checks.
 
 ### Product image storage model
 
@@ -793,7 +823,8 @@ Always re-check these instead of trusting old chat memory:
 
 1. Full functional validation is still incomplete even though deployment and health are green
    - frontend and backend smoke checks passed on the SG stack
-   - admin auth/2FA, dashboard latency, product image processing, checkout, payment, webhook, invoice, return/refund, privacy, and admin settings flows still need module-level re-testing against the live SG `aws_dev` stack
+   - live Razorpay payment, webhook processing, settlement visibility, and same-order payment re-attempt idempotency were manually validated on 2026-08-25 IST
+   - admin auth/2FA, dashboard latency, product image processing, invoice, return/refund, privacy, and admin settings flows still need module-level re-testing against the live SG `aws_dev` stack
    - health success only proves startup/routing/config at smoke level, not full business workflow correctness
 
 2. Local auth troubleshooting can still be confused by runtime mode mismatch
