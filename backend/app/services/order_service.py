@@ -148,7 +148,7 @@ class OrderService:
 
         # Lock variants and check stock
         locked_variants = {}
-
+        await self.db.execute(text("SET LOCAL lock_timeout = '2000ms'"))
         for ci, variant, product in cart_items:
             try:
                 locked = await self.db.execute(
