@@ -6,10 +6,10 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import  func, select, text, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy.exc import DBAPIError
+
 
 from app.models.models import (
     Cart, CartItem, Coupon, CouponUsage, InventoryReservation,
@@ -146,51 +146,35 @@ class OrderService:
 
         seller_state = await self._get_seller_state()
 
-        # Lock variants and check stock
-        locked_variants = {}
-        await self.db.execute(text("SET LOCAL lock_timeout = '2000ms'"))
+        # Atomic stock reservation
+        
+        reserved_items = []
         for ci, variant, product in cart_items:
-            try:
-                locked = await self.db.execute(
-                    select(ProductVariant)
-                    .where(ProductVariant.id == variant.id)
-                    .with_for_update()
-                )
-            except DBAPIError as exc:
-                message = str(exc).lower()
-                sqlstate = getattr(getattr(exc, "orig", None), "sqlstate", None)
-
-                if sqlstate == "55P03" or "lock timeout" in message:
-                    raise OrderServiceError(
-                        "This item is currently being checked out by another customer. Please try again.",
-                        409,
-                    ) from exc
-
-                raise
-            v = locked.scalar_one()
-
-            held_result = await self.db.execute(
-                select(func.coalesce(func.sum(InventoryReservation.reserved_qty), 0))
+            reserve_result = await self.db.execute(
+                update(ProductVariant)
                 .where(
-                    InventoryReservation.variant_id == variant.id,
-                    InventoryReservation.status == "held",
-                    InventoryReservation.expires_at > datetime.now(timezone.utc),
+                    ProductVariant.id == variant.id,
+                    ProductVariant.is_active == True,
+                    ProductVariant.deleted_at.is_(None),
+                    ProductVariant.stock_quantity >= ci.quantity,
                 )
+                .values(stock_quantity=ProductVariant.stock_quantity - ci.quantity)
+                .returning(ProductVariant.id)
             )
-            held_qty = held_result.scalar() or 0
-            available_qty = v.stock_quantity - held_qty
 
-            if available_qty < ci.quantity:
+            reserved = reserve_result.first()
+            if not reserved:
                 raise OrderServiceError(
-                    f"'{product.title}' ({variant.size}/{variant.color}) — only {available_qty} left.",
+                    f"'{product.title}' ({variant.size}/{variant.color}) is out of stock.",
                     400,
                 )
 
-            locked_variants[variant.id] = v
-
+            reserved_items.append((ci, variant, product))
         
         # Calculate tax
-        items_detail, subtotal, tax_data = await self._calc_items_tax(cart_items, seller_state, address.state, address.country)
+        items_detail, subtotal, tax_data = await self._calc_items_tax(
+                reserved_items, seller_state, address.state, address.country
+        )
 
         # Coupon discount
         discount = Decimal("0")
@@ -248,7 +232,7 @@ class OrderService:
         self.db.add(order)
         await self.db.flush()
         # Create reservations
-        for ci, variant, product in cart_items:
+        for ci, variant, product in reserved_items:
             reservation = InventoryReservation(
                 variant_id=variant.id,
                 order_id=order.id,
@@ -259,7 +243,7 @@ class OrderService:
             )
             self.db.add(reservation)
         # Create order items with snapshots
-        for ci, variant, product in cart_items:
+        for ci, variant, product in reserved_items:
             img_result = await self.db.execute(
                 select(ProductImage).where(
                     ProductImage.product_id == product.id, ProductImage.is_primary == True
@@ -332,14 +316,10 @@ class OrderService:
 
         # Side effects
         if new_status == "confirmed":
-            await self._adjust_stock(order_id, -1)
-            await self._release_reservations(order_id)
+            await self._confirm_reservations(order_id)
         elif new_status == "cancelled":
-            if old_status in ("confirmed", "processing"):
-                await self._adjust_stock(order_id, +1)
-            await self._release_reservations(order_id)
+            await self._release_reservations(order_id, statuses=("held", "confirmed"))
             order.payment_status = "refund_pending" if order.payment_status == "paid" else "cancelled"
-
         # Record history
         history = OrderStatusHistory(
             order_id=order.id, from_status=old_status,
@@ -442,12 +422,12 @@ class OrderService:
                 result.append((ci, row[0], row[1]))
         return result
 
-    async def _calc_items_tax(self, cart_items, seller_state, buyer_state, buyer_country):
+    async def _calc_items_tax(self, reserved_items, seller_state, buyer_state, buyer_country):
         items_detail = []
         subtotal = Decimal("0")
         total_cgst = total_sgst = total_igst = total_tax = Decimal("0")
         breakdowns = []
-        for ci, variant, product in cart_items:
+        for ci, variant, product in reserved_items:
             unit_price = variant.price_override or product.sale_price or product.base_price
             line_subtotal = unit_price * ci.quantity
             subtotal += line_subtotal
@@ -476,21 +456,43 @@ class OrderService:
         svc = CouponService(self.db)
         result = await svc.apply_coupon(user_id, coupon_code, subtotal)
         return result.get("discount_amount", Decimal("0")) if result.get("valid") else Decimal("0")
-
-    async def _adjust_stock(self, order_id, delta_sign: int):
-        """Adjust stock for all items in an order.
-        DRY: replaces _deduct_stock (delta_sign=-1) and _restore_stock (delta_sign=+1).
-        """
-        result = await self.db.execute(select(OrderItem).where(OrderItem.order_id == order_id))
-        for oi in result.scalars().all():
-            if oi.product_variant_id:
-                await self.db.execute(
-                    update(ProductVariant).where(ProductVariant.id == oi.product_variant_id)
-                    .values(stock_quantity=ProductVariant.stock_quantity + (oi.quantity * delta_sign))
-                )
-
-    async def _release_reservations(self, order_id):
+    async def _confirm_reservations(self, order_id):
         await self.db.execute(
-            update(InventoryReservation).where(InventoryReservation.order_id == order_id)
-            .values(status="released")
+            update(InventoryReservation)
+            .where(
+                InventoryReservation.order_id == order_id,
+                InventoryReservation.status == "held",
+            )
+            .values(status="confirmed")
         )
+
+    # async def _adjust_stock(self, order_id, delta_sign: int):
+    #     """Adjust stock for all items in an order.
+    #     DRY: replaces _deduct_stock (delta_sign=-1) and _restore_stock (delta_sign=+1).
+    #     """
+    #     result = await self.db.execute(select(OrderItem).where(OrderItem.order_id == order_id))
+    #     for oi in result.scalars().all():
+    #         if oi.product_variant_id:
+    #             await self.db.execute(
+    #                 update(ProductVariant).where(ProductVariant.id == oi.product_variant_id)
+    #                 .values(stock_quantity=ProductVariant.stock_quantity + (oi.quantity * delta_sign))
+    #             )
+
+    async def _release_reservations(self, order_id, statuses=("held",)):
+        result = await self.db.execute(
+            select(InventoryReservation).where(
+                InventoryReservation.order_id == order_id,
+                InventoryReservation.status.in_(statuses),
+            )
+        )
+        reservations = result.scalars().all()
+
+        for reservation in reservations:
+            await self.db.execute(
+                update(ProductVariant)
+                .where(ProductVariant.id == reservation.variant_id)
+                .values(
+                    stock_quantity=ProductVariant.stock_quantity + reservation.reserved_qty
+                )
+            )
+            reservation.status = "released"

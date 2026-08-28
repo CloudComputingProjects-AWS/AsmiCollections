@@ -572,7 +572,6 @@ class PaymentService:
             )
             return
 
-        await self.repo.deduct_stock_for_order(order_id)
         await self.repo.confirm_reservations(order_id)
         await self.repo.update_order_payment(
             order_id=order_id, payment_status="paid",
