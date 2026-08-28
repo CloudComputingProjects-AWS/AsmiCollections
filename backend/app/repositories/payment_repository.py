@@ -191,18 +191,26 @@ class PaymentRepository:
         return result.scalars().all()
 
     async def release_reservations(self, order_id: UUID):
-        """Release all held reservations for an order (payment failed)."""
-        from app.models.models import InventoryReservation
+        """Release held reservations and restore reserved stock."""
+        from app.models.models import InventoryReservation, ProductVariant
 
-        await self.db.execute(
-            update(InventoryReservation)
-            .where(
+        result = await self.db.execute(
+            select(InventoryReservation).where(
                 InventoryReservation.order_id == order_id,
                 InventoryReservation.status == "held",
             )
-            .values(status="released")
         )
+        reservations = result.scalars().all()
 
+        for reservation in reservations:
+            await self.db.execute(
+                update(ProductVariant)
+                .where(ProductVariant.id == reservation.variant_id)
+                .values(
+                    stock_quantity=ProductVariant.stock_quantity + reservation.reserved_qty
+                )
+            )
+            reservation.status = "released"
     async def confirm_reservations(self, order_id: UUID):
         """Confirm reservations (payment success)."""
         from app.models.models import InventoryReservation
@@ -220,30 +228,30 @@ class PaymentRepository:
     # STOCK DEDUCTION
     # ────────────────────────────────────────────────
 
-    async def deduct_stock_for_order(self, order_id: UUID):
-        """
-        Permanently deduct stock for all items in an order.
-        Uses SELECT FOR UPDATE to prevent race conditions.
-        """
-        from app.models.models import OrderItem, ProductVariant
+    # async def deduct_stock_for_order(self, order_id: UUID):
+    #     """
+    #     Permanently deduct stock for all items in an order.
+    #     Uses SELECT FOR UPDATE to prevent race conditions.
+    #     """
+    #     from app.models.models import OrderItem, ProductVariant
 
-        items_result = await self.db.execute(
-            select(OrderItem).where(OrderItem.order_id == order_id)
-        )
-        items = items_result.scalars().all()
+    #     items_result = await self.db.execute(
+    #         select(OrderItem).where(OrderItem.order_id == order_id)
+    #     )
+    #     items = items_result.scalars().all()
 
-        for item in items:
-            if item.product_variant_id:
-                variant_result = await self.db.execute(
-                    select(ProductVariant)
-                    .where(ProductVariant.id == item.product_variant_id)
-                    .with_for_update()
-                )
-                variant = variant_result.scalar_one_or_none()
-                if variant:
-                    variant.stock_quantity = max(
-                        0, variant.stock_quantity - item.quantity
-                    )
+    #     for item in items:
+    #         if item.product_variant_id:
+    #             variant_result = await self.db.execute(
+    #                 select(ProductVariant)
+    #                 .where(ProductVariant.id == item.product_variant_id)
+    #                 .with_for_update()
+    #             )
+    #             variant = variant_result.scalar_one_or_none()
+    #             if variant:
+    #                 variant.stock_quantity = max(
+    #                     0, variant.stock_quantity - item.quantity
+    #                 )
 
     # ────────────────────────────────────────────────
     # REFUNDS
