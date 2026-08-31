@@ -10,8 +10,6 @@ Architecture:
 """
 
 import os
-import uuid
-from datetime import datetime, timezone
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -102,8 +100,14 @@ class ImageService:
         # Generate S3 key using database record ID (so Lambda can extract it)
         s3_key = f"uploads/raw/{product_id}/{image.id}{ext}"
 
+        bucket_name = os.getenv("S3_BUCKET_NAME") or settings.S3_BUCKET_NAME
+        if not bucket_name and settings.ENVIRONMENT == "development":
+            bucket_name = "mock-s3-bucket"
+        if not bucket_name:
+            raise ImageServiceError("S3 bucket name is not configured.", 500)
+
         # Update original_url with actual S3 path
-        image.original_url = f"s3://{os.environ['S3_BUCKET_NAME']}/{s3_key}"
+        image.original_url = f"s3://{bucket_name}/{s3_key}"
         await self.db.flush()
 
         # Generate pre-signed URL using boto3
@@ -113,7 +117,7 @@ class ImageService:
             presigned_url = s3_client.generate_presigned_url(
                 "put_object",
                 Params={
-                    "Bucket": os.environ["S3_BUCKET_NAME"],
+                    "Bucket": bucket_name,
                     "Key": s3_key,
                     "ContentType": content_type,
                 },
@@ -249,7 +253,7 @@ class ImageService:
             update(ProductImage)
             .where(
                 ProductImage.product_id == image.product_id,
-                ProductImage.is_primary == True,
+                ProductImage.is_primary.is_(True),
             )
             .values(is_primary=False)
         )

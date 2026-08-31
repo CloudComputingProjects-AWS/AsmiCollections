@@ -3,7 +3,7 @@
  * Add/Edit product with dynamic attribute fields, variants, images.
  */
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useProductStore, useCategoryStore, useAttributeStore } from '../../stores/adminStores';
 import { PageHeader } from '../../components/admin/AdminUI';
 import { imageApi, variantApi } from '../../api/adminApi';
@@ -24,6 +24,7 @@ const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 export default function ProductForm() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isEdit = !!id;
   const { product, fetchProduct, createProduct, updateProduct } = useProductStore();
   const { categories, fetchCategories } = useCategoryStore();
@@ -39,8 +40,7 @@ export default function ProductForm() {
   const [images, setImages] = useState([]);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
-  const [activeTab, setActiveTab] = useState('basic');
-
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'basic');
   // Image upload state
   const [uploadDragging, setUploadDragging] = useState(false);
   const [uploadErrors, setUploadErrors] = useState([]);
@@ -66,7 +66,38 @@ export default function ProductForm() {
       setImages(product.images || []);
     }
   }, [product, isEdit]);
-
+  useEffect(()=>{
+    // Stop immediately if this is not edit mode, or user is not on the Images tab
+    if(!isEdit ||activeTab!=='images') return;
+    // Checks whether at least one image matches a condition 'pending', 'processing'
+    const hasPending=images.some((img)=>
+    ['pending', 'processing'].includes(img.processing_status)
+    );
+    // If there are no pending/processing images, stop.
+    if(!hasPending) return;
+    // Starts a timer that runs repeatedly.Runs the polling function 
+    // every 5000 milliseconds, meaning every 5 seconds.
+    const intervalId=setInterval(async() =>{
+      try{
+        // Calls backend API to fetch latest image records for this product.
+        const {data}= await imageApi.list(id);
+        // Updates React state with latest image list from backend.
+        // If backend returns nothing, use empty array.
+        setImages(data||[]);
+      }catch(err){
+        console.error('Failed to refresh image status',err)
+      }
+    }
+    ,5000
+    );
+    // Cleanup function. React runs this when:
+    //- component unmounts
+    //- dependencies change
+    //- user leaves Images tab
+    //- no pending images remain after state update
+    return () => clearInterval(intervalId);
+    },[isEdit, id, activeTab, images]
+  )
   const updateField = (key, value) => setForm((f) => ({ ...f, [key]: value }));
   const updateAttr = (key, value) => setForm((f) => ({ ...f, attributes: { ...(f.attributes || {}), [key]: value }, }));
   const addVariant = () => setVariants((v) => [...v, { size: '', color: '', color_hex: '#000000', sku: '', stock_quantity: 0, price_override: '', is_new: true }]);
@@ -319,6 +350,10 @@ export default function ProductForm() {
     { key: 'images', label: `Images (${images.length})` },
     { key: 'seo', label: 'SEO' },
   ];
+  const handleTabChange = (tabKey) => {
+    setActiveTab(tabKey);
+    setSearchParams({ tab: tabKey });
+  };
 
   return (
     <div>
@@ -343,7 +378,7 @@ export default function ProductForm() {
       {/* Tabs */}
       <div className="flex gap-1 mb-5 bg-gray-50 rounded-lg p-1 overflow-x-auto" role="tablist">
         {tabs.map((tab) => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+          <button key={tab.key} onClick={() => handleTabChange(tab.key)}
             role="tab"
             aria-selected={activeTab === tab.key}
             className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${activeTab === tab.key ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>

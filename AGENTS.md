@@ -97,10 +97,14 @@
   - unauthenticated customers are redirected to login before checkout
 - Order placement flow:
   - checkout validates cart, stock, address, coupon, shipping fee, and total
+  - checkout stock reservation now uses an atomic database update against `product_variants.stock_quantity`, so `stock_quantity` represents currently available sellable stock after reservation
+  - the atomic reservation pattern is `UPDATE product_variants SET stock_quantity = stock_quantity - qty WHERE id = variant_id AND stock_quantity >= qty RETURNING id`; this is intended to prevent oversell while still selling all available stock under concurrent checkout pressure
+  - `inventory_reservations.status='held'` records which pending order owns already-deducted reserved stock; payment success confirms the reservation, while payment failure/cancellation/expiry should release the reservation and restore stock
+  - do not reintroduce the prior checkout lock-timeout pattern that used `SELECT ... FOR UPDATE`, counted held reservations separately, and could reject valid buyers before all available stock was sold
   - backend creates `orders` and `order_items` records in Neon
   - initial payment status is `pending`
   - payment gateway confirmation, polling, or webhook updates payment/order status
-  - successful payment should move payment status to `paid` and order status toward confirmed/fulfillment flow
+  - successful payment should move payment status to `paid`, confirm the existing reservation, and move order status toward confirmed/fulfillment flow without deducting stock a second time
   - live Razorpay UPI payment validation on the SG `aws_dev` stack passed on 2026-08-25 IST using order `ORD-20260824-DB3C48` / order id `47330275-a3ac-488c-b446-ef55b03e94b8`
   - Razorpay payment `pay_TTkFKWASfbCqkb` for Razorpay order `order_TTkEQ47p8CAuAb` was captured, recorded in Neon `payment_events` as `payment.captured`, and processed with `processed=true`
   - same-order payment re-attempt against `/payments/upi/collect` returned `400` with `Cannot initiate payment for order in 'confirmed' status`; the order remained `payment_status=paid`, `order_status=confirmed`, and the original gateway ids were unchanged
@@ -155,6 +159,18 @@ Use idempotency to ensure that one intended payment operation creates one busine
 - Public processed image URLs should use the configured SG CDN domain, for example:
   - `https://<sg-dev-cloudfront-domain>/uploads/processed/{product_id}/{image_id}.webp`
 - If S3 only contains `uploads/raw/...` after an upload, the image pipeline is not completing and likely needs S3 trigger, Lambda logs, S3 `PutObject` permission, or callback verification troubleshooting.
+- Admin image upload validation on the SG `aws_dev` stack passed on 2026-08-30 IST:
+  - presigned upload to S3 passed after configuring bucket CORS on `ashmi-dev-assets-sg` for direct browser `PUT` from `https://db5l55bfhn85l.cloudfront.net`
+  - narrow S3 CORS direction for current frontend upload code is to allow `PUT` from the SG frontend CloudFront origin with `AllowedHeaders` including `Content-Type`; avoid broad `AllowedHeaders: ["*"]` unless the upload code begins sending additional required headers
+  - image processor completion passed for uploaded PNG, JPG, and WebP images; processed product images are served as generated WebP variants
+  - multiple image upload passed with 6 uploaded images
+  - delete image, set primary image, admin edit-page image display, and customer product-page image display passed
+  - invalid file type validation passed by rejecting a GIF before upload with an unsupported-format message and without increasing image count
+- Important 2026-08-30 SG image-serving lesson:
+  - if a processed image request returns `200 OK` but `Content-Type: text/html`, CloudFront is serving the frontend app fallback HTML instead of the image object
+  - root cause observed: `db5l55bfhn85l.cloudfront.net` did not yet have `ashmi-dev-assets-sg` as an origin and did not have a `/uploads/*` behavior
+  - fix applied: add `ashmi-dev-assets-sg` as a CloudFront origin on distribution `E3TY6IMS9QZRVN`, create behavior `/uploads/*` above `Default (*)`, route it to the assets bucket origin, use Origin Access Control, update `ashmi-dev-assets-sg` bucket policy to allow CloudFront service principal with `AWS:SourceArn=arn:aws:cloudfront::762813627344:distribution/E3TY6IMS9QZRVN`, and invalidate `/uploads/*`
+  - expected healthy processed image response is `Status Code: 200 OK` with `Content-Type: image/webp`
 
 ## Local Runtime Rules
 
@@ -703,6 +719,24 @@ Current project direction is AWS-side protection, not app-side Redis middleware.
   - Neon Free plan
 - Do not treat `2000` VUs as validated until separate clean test evidence exists.
 
+### Verified checkout write-scale findings
+
+- Module: Checkout writes and order creation.
+- Test harness:
+  - local pytest file: [backend/tests/integration/test_checkout_order_creation.py](C:/Ashmiwebportal/backend/tests/integration/test_checkout_order_creation.py)
+  - this path is intentionally ignored by git in the current repo setup, so recreate/check the local test harness before relying on it in a fresh clone
+  - default API target is the SG dev API Gateway base `https://r5k4xtwcpi.execute-api.ap-southeast-1.amazonaws.com/dev/api/v1`
+- Completed stage results in `aws_dev`:
+  - C1 25 VU checkout scale for 10 minutes passed: cart add/update, checkout summary, place order, pending payment state, order item/history writes, cart clear, and no 5xx/429
+  - C3 100 VU limited-stock contention passed after switching to atomic stock reservation: with 30 available units, exactly 30 orders succeeded, remaining users were rejected cleanly, no oversell, no negative inventory, and no 5xx/429
+  - C4 250 VU write-heavy checkout was accepted as application-behavior passed: a pytest run failed only because the small 4-variant `aws_dev` data set under-provisioned one SKU and returned a clean out-of-stock business error; no platform/system failure was identified from that result
+  - C5 500 VU confirmation passed after batching setup at 50 concurrent users and synchronizing only `/checkout/place-order`: 500 successful pending orders, no 5xx/429, DB consistency checks passed, no negative inventory, and successful place-order p95 stayed below the configured 20 second threshold
+- Checkout scale-test data notes:
+  - `aws_dev` currently has a very small product/variant data set compared with the original plan expectation of hundreds of variants
+  - for C4/C5 with only four active variants, replenish total available `product_variants.stock_quantity` before each run; atomic reservation decrements stock immediately for every successful pending order
+  - stale C3/C4/C5 `inventory_reservations.status='held'` rows from old test runs should be reconciled before new runs; old pre-atomic held reservations did not necessarily deduct stock at creation time
+  - C5 should not start all 500 users at login simultaneously; use controlled setup concurrency and release the synchronized load only for `/checkout/place-order`
+
 ## Known Operational Findings Carried Forward
 
 ### 1. Login / local confusion
@@ -824,7 +858,8 @@ Always re-check these instead of trusting old chat memory:
 1. Full functional validation is still incomplete even though deployment and health are green
    - frontend and backend smoke checks passed on the SG stack
    - live Razorpay payment, webhook processing, settlement visibility, and same-order payment re-attempt idempotency were manually validated on 2026-08-25 IST
-   - admin auth/2FA, dashboard latency, product image processing, invoice, return/refund, privacy, and admin settings flows still need module-level re-testing against the live SG `aws_dev` stack
+   - admin image upload and product image processing were manually validated on 2026-08-30 IST
+   - admin auth/2FA, dashboard latency, invoice, return/refund, privacy, and admin settings flows still need module-level re-testing against the live SG `aws_dev` stack
    - health success only proves startup/routing/config at smoke level, not full business workflow correctness
 
 2. Local auth troubleshooting can still be confused by runtime mode mismatch
@@ -840,7 +875,6 @@ Always re-check these instead of trusting old chat memory:
 1. Continue Singapore `aws_dev` migration validation
    - keep GitHub `aws_dev` variables and Lambda environment variables aligned to SG values
    - confirm CloudFront distribution `E3TY6IMS9QZRVN` and domain `db5l55bfhn85l.cloudfront.net` remain the active dev frontend target
-   - verify Singapore S3 image trigger and processed asset path end to end
    - re-test admin login
    - admin 2FA
    - `/health`
