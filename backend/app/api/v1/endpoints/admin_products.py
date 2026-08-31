@@ -380,7 +380,21 @@ async def list_inventory(
     )
     return _make_paginated(items=items, total=total, page=page, page_size=page_size)
 
-
+@router.put("/inventory/bulk", response_model=MessageResponse,dependencies=[Depends(require_trusted_origin)])
+async def bulk_update_inventory(
+    data: InventoryBulkUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(product_mgr),
+    service: ProductService = Depends(get_product_service),
+):
+    """Bulk update stock quantities."""
+    try:
+        await service.bulk_update_stock(data.items)
+        await db.commit()
+        return MessageResponse(message=f"Updated {len(data.items)} variants.")
+    except ProductServiceError as e:
+        _handle_error(e)
+        
 @router.put("/inventory/{variant_id}", response_model=ProductVariantResponse,dependencies=[Depends(require_trusted_origin)])
 async def update_inventory(
     variant_id: UUID,
@@ -397,21 +411,6 @@ async def update_inventory(
     except ProductServiceError as e:
         _handle_error(e)
 
-
-@router.put("/inventory/bulk", response_model=MessageResponse,dependencies=[Depends(require_trusted_origin)])
-async def bulk_update_inventory(
-    data: InventoryBulkUpdateRequest,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(product_mgr),
-    service: ProductService = Depends(get_product_service),
-):
-    """Bulk update stock quantities."""
-    try:
-        await service.bulk_update_stock(data.items)
-        await db.commit()
-        return MessageResponse(message=f"Updated {len(data.items)} variants.")
-    except ProductServiceError as e:
-        _handle_error(e)
 
 
 @router.get("/inventory/low-stock", response_model=list[LowStockResponse])
