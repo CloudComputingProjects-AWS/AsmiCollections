@@ -44,6 +44,7 @@ class Settings(BaseSettings):
 
     # ────────────────── AWS ──────────────────
     AWS_REGION: str = ""
+    S3_BUCKET_NAME: str = ""
 
     # ────────────────── Payment Gateways ──────────────────
     RAZORPAY_KEY_ID: str = ""
@@ -159,5 +160,4 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
-
 
