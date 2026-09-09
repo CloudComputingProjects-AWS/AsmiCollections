@@ -28,6 +28,7 @@ export default function RegisterPage() {
     email: '', password: '', confirm_password: '',
     first_name: '', last_name: '', phone: '',
     country_code: '+91',
+    whatsapp_consent: 'yes',
     consent_terms: false, consent_privacy: false,
     consent_marketing_email: false, consent_marketing_sms: false,
   });
@@ -53,6 +54,11 @@ export default function RegisterPage() {
     if (form.password !== form.confirm_password) e.confirm_password = 'Passwords do not match';
     if (!form.consent_terms) e.consent_terms = 'You must accept the Terms of Service';
     if (!form.consent_privacy) e.consent_privacy = 'You must accept the Privacy Policy';
+    if (!form.whatsapp_consent) e.whatsapp_consent = 'Please select Yes or No';
+    if (!/^[0-9]{8,15}$/.test(form.phone) ||
+      form.country_code.length - 1 + form.phone.length > 15) {
+      e.phone = 'Enter a valid phone number without the country code';
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -69,12 +75,13 @@ export default function RegisterPage() {
         password: form.password,
         first_name: form.first_name,
         last_name: form.last_name,
-        phone: form.phone || undefined,
+        phone: form.phone,
         country_code: form.country_code,
         terms_accepted: form.consent_terms,
         privacy_accepted: form.consent_privacy,
         marketing_email: form.consent_marketing_email,
         marketing_sms: form.consent_marketing_sms,
+        whatsapp_opt_in: form.whatsapp_consent === 'yes',
       });
       setSuccessMsg('Account created! Please verify your email.');
       setTimeout(() => {
@@ -128,7 +135,7 @@ export default function RegisterPage() {
         {/* Phone with country code dropdown */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            Phone (optional)
+            Phone
           </label>
           <div className="flex gap-2">
             <select
@@ -143,14 +150,35 @@ export default function RegisterPage() {
             </select>
             <input
               type="tel"
+              required
+              inputMode="numeric"
               value={form.phone}
-              onChange={set('phone')}
+              onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, '').slice(0, 15) })}
               placeholder="9876543210"
-              className="flex-1 border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+              className="min-w-0 flex-1 border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
               aria-label="Phone number"
+              aria-invalid={Boolean(errors.phone)}
             />
           </div>
+          {errors.phone && <p role="alert" className="text-xs text-error mt-1">{errors.phone}</p>}
         </div>
+
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-medium text-gray-700">
+            Is this your Whatsapp number?
+          </legend>
+          <div className="flex gap-6">
+            {['yes', 'no'].map((choice) => (
+              <label key={choice} className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="radio" name="whatsapp_consent" value={choice}
+                  checked={form.whatsapp_consent === choice}
+                  onChange={set('whatsapp_consent')} required />
+                {choice === 'yes' ? 'Yes' : 'No'}
+              </label>
+            ))}
+          </div>
+          {errors.whatsapp_consent && <p role="alert" className="text-xs text-error">{errors.whatsapp_consent}</p>}
+        </fieldset>
 
         <Input label="Password" type="password" icon={Lock} placeholder="Min. 8 characters"
           value={form.password} onChange={set('password')} error={errors.password} />

@@ -93,11 +93,24 @@ class AuthService:
             phone=normalized_phone,
             country_code=(data.country_code or "+91").strip(),
             role="customer",
+            whatsapp_number=data.whatsapp_number,
+            whatsapp_country_code=data.whatsapp_country_code,
+            whatsapp_opt_in=data.whatsapp_opt_in,
+            whatsapp_activation_status="active" if data.whatsapp_opt_in else "opted_out",
         )
         self.db.add(user)
         await self.db.flush()
 
         consents = [
+            UserConsent(
+                user_id=user.id,
+                consent_type="whatsapp_support",
+                granted=data.whatsapp_opt_in,
+                granted_at=datetime.now(timezone.utc) if data.whatsapp_opt_in else None,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                version="1.0",
+            ),
             UserConsent(
                 user_id=user.id,
                 consent_type="terms_of_service",

@@ -7,7 +7,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.database import get_db
 from app.middleware.auth import get_current_user
 from app.models.models import User, UserAddress
@@ -17,6 +16,7 @@ from app.schemas.auth import (
     MessageResponse,
     UserProfileUpdate,
     UserResponse,
+    WhatsAppActivationUpdate,
 )
 from app.schemas.order import AddressCreate, AddressResponse
 from app.core.security import hash_password, verify_password
@@ -46,6 +46,31 @@ async def update_profile(
     await db.refresh(user)
     return user
 
+@router.put("/whatsapp-activation",
+    response_model=UserResponse,
+    dependencies=[Depends(require_trusted_origin)],
+)
+async def update_whatsapp_activation(
+    data: WhatsAppActivationUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not data.whatsapp_opt_in:
+        user.whatsapp_opt_in = False
+        
+        user.whatsapp_activation_status = "opted_out"
+        await db.commit()
+        await db.refresh(user)
+        return user
+
+    user.whatsapp_number = data.whatsapp_number
+    user.whatsapp_country_code = data.whatsapp_country_code
+    user.whatsapp_opt_in = True
+    user.whatsapp_activation_status = "active"
+
+    await db.commit()
+    await db.refresh(user)
+    return user
 
 @router.put("/change-password", response_model=MessageResponse,dependencies=[Depends(require_trusted_origin)])
 async def change_password(
