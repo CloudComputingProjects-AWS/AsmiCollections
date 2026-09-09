@@ -68,7 +68,12 @@ class User(Base, SoftDeleteMixin):
     cart = relationship("Cart", back_populates="user", uselist=False)
     orders = relationship("Order", back_populates="user", lazy="dynamic")
     reviews = relationship("Review", back_populates="user")
-
+    whatsapp_number = Column(EncryptedText())
+    whatsapp_country_code = Column(String(5))
+    whatsapp_wa_id = Column(EncryptedText())
+    whatsapp_opt_in = Column(Boolean, default=False, nullable=False)
+    whatsapp_activation_status = Column(String(30), default="not_started", nullable=False)
+  
 
 class UserAddress(Base, SoftDeleteMixin):
     __tablename__ = "user_addresses"

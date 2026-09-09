@@ -8,18 +8,24 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import useAuthStore, { ADMIN_ROLES, ROLE_DEFAULT_ROUTE } from '../../stores/authStore';
+import api from '../../api/apiClient';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const user = useAuthStore((s) => s.user);
-  const loading = useAuthStore((s) => s.loading);
   const loginFn = useAuthStore((s) => s.login);
-
   const [form, setForm] = useState({ email: '', password: '' });
   const [showPass, setShowPass] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [pendingProfile, setPendingProfile] = useState(null);
+  const [showWhatsAppPrompt, setShowWhatsAppPrompt] = useState(false);
+  const [whatsAppForm, setWhatsAppForm] = useState({
+    whatsapp_country_code: '',
+    whatsapp_number: '',
+    whatsapp_opt_in: false,
+  });
   // Logout success message from location.state
   const [logoutMsg, setLogoutMsg] = useState(
     () => location.state?.logoutSuccess ? 'You have been logged out successfully.' : ''
@@ -41,17 +47,88 @@ export default function LoginPage() {
 
   // Already logged in â†’ redirect
   useEffect(() => {
-    if (user?.role) {
-      const dest = (ADMIN_ROLES.includes(user.role) && !user.totp_enabled)
-        ? '/profile?tab=2fa'
-        : (ROLE_DEFAULT_ROUTE[user.role] ?? '/');
-      navigate(dest, { replace: true });
-    }
-  }, [navigate, user]);
+  if (submitting || showWhatsAppPrompt) return;
+
+  if (user?.role) {
+    const dest = (ADMIN_ROLES.includes(user.role) && !user.totp_enabled)
+      ? '/profile?tab=2fa'
+      : (ROLE_DEFAULT_ROUTE[user.role] ?? '/');
+    navigate(dest, { replace: true });
+  }
+}, [navigate, user, submitting, showWhatsAppPrompt]);
+
 
   const handleChange = (e) =>
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  const shouldAskWhatsAppActivation = (profile) =>{return(profile?.role === 'customer'
+    && profile?.whatsapp_activation_status !== 'active'
+    && profile?.whatsapp_activation_status !== 'opted_out'
+    && profile?.whatsapp_opt_in!==true);}
 
+  const navigateAfterLogin = (profile) => {
+    const params = new URLSearchParams(location.search);
+    const nextRaw = params.get('next') ?? '';
+    const next=nextRaw.startsWith('/') && !nextRaw.startsWith('//') ? nextRaw : null;
+    const dest = (ADMIN_ROLES.includes(profile?.role) && !profile?.totp_enabled)
+      ? '/profile?tab=2fa'
+      : (next ?? ROLE_DEFAULT_ROUTE[profile?.role] ?? '/');
+    navigate(dest, { replace: true });
+  }
+  const handleWhatsAppSave=async()=>{
+    if (!whatsAppForm.whatsapp_opt_in) return;
+    if(!whatsAppForm.whatsapp_number.trim())
+      {
+        setErrorMsg('WhatsApp number is required');
+        return;
+      }
+      setSubmitting(true);
+      try{
+        const resp=await api.put('/user/whatsapp-activation',{
+          whatsapp_country_code:whatsAppForm.whatsapp_country_code,
+          whatsapp_number:whatsAppForm.whatsapp_number,
+          whatsapp_opt_in:true
+        });
+        useAuthStore.setState({ user: resp.data || pendingProfile });
+        setShowWhatsAppPrompt(false);
+        navigateAfterLogin(resp.data || pendingProfile);
+      }catch(err){
+        const msg = err?.response?.data?.detail || err?.message;
+        setErrorMsg(typeof msg === 'string' ? msg : 'Failed to save WhatsApp number');
+        setSubmitting(false);
+      }
+  };
+  const handleWhatsAppSkip = async () => {
+    setShowWhatsAppPrompt(false);
+    navigateAfterLogin(pendingProfile);
+  };
+
+  const handleWhatsAppOptOut = async () => {
+    setSubmitting(true);
+    try {
+      const resp = await api.put('/user/whatsapp-activation', {
+        whatsapp_country_code: null,
+        whatsapp_number: null,
+        whatsapp_opt_in: false,
+      });
+      useAuthStore.setState({ user: resp.data || pendingProfile });
+      setShowWhatsAppPrompt(false);
+      navigateAfterLogin(resp.data || pendingProfile);
+    } catch (err) {
+      const msg = err?.response?.data?.detail || err?.message;
+      setErrorMsg(typeof msg === 'string' ? msg : 'Failed to save WhatsApp preference');
+      setSubmitting(false);
+    }
+  };
+  const normalizeWhatsAppPrefill = (phone, countryCode) => {
+  const digits = (phone || '').replace(/\D/g, '');
+  const countryDigits = (countryCode || '').replace(/\D/g, '');
+
+  if (countryDigits && digits.startsWith(countryDigits)) {
+    return digits.slice(countryDigits.length);
+  }
+
+  return digits;
+};
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.email.trim()) { setErrorMsg('Email is required'); return; }
@@ -78,13 +155,20 @@ export default function LoginPage() {
         return;
       }
 
-      const params = new URLSearchParams(location.search);
-      const nextRaw = params.get('next') ?? '';
-      const next = nextRaw.startsWith('/') && !nextRaw.startsWith('//') ? nextRaw : null;
-      const dest = (ADMIN_ROLES.includes(profile?.role) && !profile?.totp_enabled)
-        ? '/profile?tab=2fa'
-        : (next ?? ROLE_DEFAULT_ROUTE[profile?.role] ?? '/');
-      navigate(dest, { replace: true });
+      if (shouldAskWhatsAppActivation(profile)) {
+        setPendingProfile(profile);
+        const countryCode = profile?.country_code || '';
+        setWhatsAppForm((prev) => ({
+          ...prev,
+          whatsapp_country_code: countryCode,
+          whatsapp_number: normalizeWhatsAppPrefill(profile?.phone, countryCode),
+        }));
+        setShowWhatsAppPrompt(true);
+        setSubmitting(false);
+        return;
+      }
+
+      navigateAfterLogin(profile);
     } catch (err) {
       const msg = err?.response?.data?.detail;
       setErrorMsg(typeof msg === 'string' ? msg : 'Invalid user id and password');
@@ -224,6 +308,96 @@ export default function LoginPage() {
           )}
         </div>
       </div>
+            {showWhatsAppPrompt && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4">
+          <div className="w-full max-w-md bg-white rounded-xl shadow-lg border border-gray-100 p-6">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Activate WhatsApp order support
+            </h2>
+            <p className="text-sm text-gray-600 mt-2">
+              Get order updates and support messages on WhatsApp. You can opt out anytime.
+            </p>
+
+            <div className="mt-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  WhatsApp number
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={whatsAppForm.whatsapp_country_code}
+                    onChange={(e) => setWhatsAppForm({
+                      ...whatsAppForm,
+                      whatsapp_country_code: e.target.value,
+                    })}
+                    className="border rounded-lg px-2 py-2.5 text-sm w-20 focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="">Code</option>
+                    <option value="+91">+91</option>
+                    <option value="+1">+1</option>
+                    <option value="+44">+44</option>
+                  </select>
+
+                  <input
+                    type="tel"
+                    value={whatsAppForm.whatsapp_number}
+                    onChange={(e) => setWhatsAppForm({
+                      ...whatsAppForm,
+                      whatsapp_number: e.target.value.replace(/\D/g, '').slice(0, 15),
+                    })}
+                    placeholder="9876543210"
+                    className="flex-1 border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  />
+                </div>
+              </div>
+
+              <label className="flex gap-3 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={whatsAppForm.whatsapp_opt_in}
+                  onChange={(e) => setWhatsAppForm({
+                    ...whatsAppForm,
+                    whatsapp_opt_in: e.target.checked,
+                  })}
+                  className="mt-1"
+                />
+                <span>
+                  I agree to receive Ashmi order updates and support messages on WhatsApp.
+                </span>
+              </label>
+            </div>
+
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <button
+                type="button"
+                onClick={handleWhatsAppSave}
+                disabled={submitting || !whatsAppForm.whatsapp_opt_in}
+                className="py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg"
+              >
+                {submitting ? 'Saving...' : 'Activate'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleWhatsAppSkip}
+                disabled={submitting}
+                className="py-2.5 px-4 border border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50"
+              >
+                Skip
+              </button>
+
+              <button
+                type="button"
+                onClick={handleWhatsAppOptOut}
+                disabled={submitting}
+                className="py-2.5 px-4 border border-red-200 text-red-700 text-sm font-semibold rounded-lg hover:bg-red-50"
+              >
+                Opted Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

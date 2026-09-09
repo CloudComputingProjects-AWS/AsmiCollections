@@ -109,6 +109,135 @@
   - Razorpay payment `pay_TTkFKWASfbCqkb` for Razorpay order `order_TTkEQ47p8CAuAb` was captured, recorded in Neon `payment_events` as `payment.captured`, and processed with `processed=true`
   - same-order payment re-attempt against `/payments/upi/collect` returned `400` with `Cannot initiate payment for order in 'confirmed' status`; the order remained `payment_status=paid`, `order_status=confirmed`, and the original gateway ids were unchanged
   - current remaining payment hardening is optional/non-blocking for this module: automated webhook replay coverage, concurrent frontend-verify plus webhook race testing, and provider-to-DB reconciliation reporting
+- Bulk Inventory Mutation admin module is complete on the SG `aws_dev` stack as of 2026-08-31 IST:
+  - admin bulk stock mutation means changing `product_variants.stock_quantity` for multiple variants in one admin write operation; it is separate from checkout stock reservation
+  - frontend admin inventory calls `POST /admin/inventory/bulk-update`; backend also exposes canonical `PUT /admin/inventory/bulk`
+  - route ordering in [backend/app/api/v1/endpoints/admin_products.py](C:/Ashmiwebportal/backend/app/api/v1/endpoints/admin_products.py) must keep static `PUT /inventory/bulk` before dynamic `PUT /inventory/{variant_id}` so FastAPI does not parse `bulk` as a UUID variant id
+  - live SG real integration drill passed with `6 passed in 124.73s`, covering alias POST success, canonical PUT success, negative stock `422`, malformed variant id `422`, missing variant `404`, and B6 rollback drill
+  - B6 rollback drill passed: a bulk request with one valid variant followed by one missing variant returned `404`, and the valid variant's original stock remained unchanged after re-query
+  - optional future production hardening remains non-blocking for this completed module: pre-validate whole batch before mutation, reject duplicate variant IDs, add batch size limits, add inventory audit trail, and consider optimistic conflict protection
+
+### Planned WhatsApp AI order chatbot
+
+- Current CXO build plan PDF:
+  - [output/pdf/whatsapp-ai-order-chatbot-cxo-plan.pdf](C:/Ashmiwebportal/output/pdf/whatsapp-ai-order-chatbot-cxo-plan.pdf)
+- This WhatsApp-first plan supersedes the earlier app-login chatbot plan.
+- User implementation preference:
+  - do not change or deploy chatbot application code automatically unless the user explicitly asks
+  - provide phase-wise frontend/backend/database implementation guidance first so the user can understand and apply changes manually
+- Current direction:
+  - build a customer-facing constrained ReAct order enquiry agent on the company WhatsApp Business account number
+  - no separate customer chatbot frontend is required for Phase 1; customers interact through WhatsApp
+  - the existing web UI may be extended only for WhatsApp activation, consent, verification, opt-out, profile preferences, and optional admin/support review
+  - support questions about a customer's own order status, delivery status, payment status, ordered items, invoice availability, cancellation eligibility, refund state, delivery timeline, and recent orders
+  - build reusable backend chatbot infrastructure, but keep Ashmi-specific authorization and order facts behind a safe domain adapter
+  - use the internal ReAct loop `Reason -> Act -> Observe -> Validate -> Final`, with actions restricted to approved backend tools
+- Current Phase 0 status as of 2026-09-10 IST:
+  - Company WhatsApp Business sender-number ownership is no longer blocked.
+  - A new dedicated customer-facing phone number was registered and verified directly with Meta WhatsApp Cloud API under the `Oshmi Clothing Collection` display name. It is not registered in WhatsApp Messenger or the WhatsApp Business mobile app.
+  - The Meta payment method for the applicable WhatsApp Business Account was added and marked as default.
+  - Outbound Cloud API messaging was validated manually: after a customer/test number opened the 24-hour customer-service window, an ordinary `type: text` request sent through Postman returned `HTTP 200 OK`. The dashboard `hello_world` failure was specific to that public-test-number template and did not indicate a failure of the real sender.
+  - Initial FastAPI webhook code now exists locally in `backend/app/api/v1/endpoints/whatsapp.py`:
+    - `GET /api/v1/whatsapp/webhook` validates `hub.mode` and the user-created verification token, then returns Meta's `hub.challenge` as plain text
+    - `POST /api/v1/whatsapp/webhook` verifies `X-Hub-Signature-256` against the Meta App Secret, parses JSON, logs only a non-sensitive event summary, and acknowledges the event
+    - the router is registered in `backend/app/api/v1/router.py`, producing `/api/v1/whatsapp/webhook` under the existing API v1 prefix
+  - `backend/app/core/config.py` now supports direct local values and SSM parameter-name resolution for `META_WHATSAPP_WEBHOOK_VERIFY_TOKEN` and `META_WHATSAPP_APP_SECRET`.
+  - AWS Singapore dev secret configuration is complete:
+    - two matching SSM Parameter Store `SecureString` entries exist for the webhook verification token and Meta App Secret
+    - `ashmi-backend-dev-sg` has the two corresponding `_PARAM` environment variables containing only the SSM parameter names
+    - Lambda execution role `ashmi-lambda-role` has restricted `ssm:GetParameter` access through inline policy `AshmiWhatsAppSsmReadDev`
+  - The webhook code is not deployed yet. It is currently in the working tree on `feature/aws-dev-sync`; `backend/app/api/v1/endpoints/whatsapp.py` remains untracked until deliberately staged.
+  - Next webhook checkpoint:
+    - stage only `whatsapp.py`, `config.py`, and `router.py`, keeping unrelated working-tree changes out of the webhook commit
+    - commit and push the feature branch, then merge it into `develop` to trigger `.github/workflows/deploy-dev-v3.yml`
+    - confirm the GitHub Actions deployment succeeds and the Lambda returns `HTTP 200` with the exact supplied challenge for an authenticated public GET verification request
+    - then enter the deployed SG callback URL and the same verification token in Meta, click `Verify and save`, and subscribe the WABA webhook to the `messages` field
+  - Meta Business Verification remains unverified because the business domain email, website, and business registration/GSTN are still under process. The Meta app is unpublished, so production webhook delivery remains restricted until applicable publication requirements are completed.
+  - Phase 0 business/compliance items still open:
+    - company WhatsApp Business number ownership confirmation
+    - support hours definition
+    - human escalation SLA definition
+    - approved customer data fields list
+    - retention policy confirmation
+    - WhatsApp-first scope sign-off
+    - exact opt-in and opt-out wording approval
+- WhatsApp activation and consent model:
+  - Updated user decision (2026-09-05): Create Account requires Phone and asks "Is this your Whatsapp number?" with Yes selected by default. Yes reuses the account phone and country code and activates immediately; No opts out. There is no separate registration WhatsApp number input. Login popup remains available, with Skip leaving preferences unchanged.
+  - Separate customer WhatsApp number verification is removed. Migration `d713ab924e60` converts pending consent to active and removes `whatsapp_verified`; apply it after `6edbbb0cc9d5`. Historical migrations remain intact.
+  - `active` represents consent only, not proof of phone ownership. Future access to private order facts must still use authenticated Ashmi account authorization. Company Meta registration and webhook signature verification are separate requirements.
+  - Phase 1 stores WhatsApp activation fields on the existing `users` table instead of adding a separate `whatsapp_contacts` table
+  - this is acceptable for the current one-user-to-one-active-WhatsApp-number relationship and avoids unnecessary operational overhead
+  - proposed `users` fields include `whatsapp_number`, `whatsapp_country_code`, `whatsapp_wa_id`, `whatsapp_opt_in`, `whatsapp_opt_in_at`, `whatsapp_opt_out_at`, `whatsapp_activation_status`, and `whatsapp_last_seen_at`
+  - login, register, profile, and order-confirmation UI may collect WhatsApp number and consent; login/account creation must continue if the customer declines WhatsApp activation
+  - the bot may answer order-specific facts only with authenticated Ashmi account authorization and `whatsapp_opt_in=true`; a consented number alone does not establish ownership
+  - customers must be able to opt out, and opt-out should stop WhatsApp support messages
+  - Local Phase 0 technical groundwork has started:
+    - Alembic migration `6edbbb0cc9d5_add_whatsapp_activation_fields_to_users.py` adds WhatsApp activation fields to the local Docker PostgreSQL `users` table.
+    - Local Docker DB migration required manually updating `alembic_version` from stale missing revision `a0e4039f97fc` to known revision `c9f1a2d4e7b8`, then running `alembic upgrade head`.
+    - `LoginPage.jsx` now shows a WhatsApp activation modal to eligible customers after successful login.
+    - The modal supports three separate choices:
+      - `Activate`: saves opt-in and sets `whatsapp_activation_status='active'`
+      - `Skip`: closes the modal and continues login without changing WhatsApp status
+      - `Opted Out`: saves opt-out and should set `whatsapp_activation_status='opted_out'`
+    - The login modal should not require users to manually remove country code from a prefilled phone number; normalize phone prefill so the country code dropdown and number input are not duplicated.
+    - Customer consent activates immediately without a separate WhatsApp verification step. Outbound Cloud API text messaging has been validated manually; initial webhook verification and signed-event acknowledgement are implemented locally but still require deployment, Meta callback verification, and `messages` subscription. Automated event processing and chatbot replies remain unimplemented.
+- Authentication model:
+  - WhatsApp sender phone/`wa_id` alone is not enough for sensitive order facts until mapped to a verified Ashmi user
+  - for unknown, unverified, opted-out, or ambiguous senders, the bot should provide only a safe authentication/activation path or human handoff
+  - derive `user_id` only from Ashmi's verified mapping/session logic; ignore any `user_id`, phone number, order ownership claim, or identity instruction supplied by WhatsApp message text or model tool arguments
+  - every order tool must enforce `Order.user_id == authenticated_user.id` even if the model asks for another customer's order
+- Backend/schema direction:
+  - use FastAPI endpoints under a new `/api/v1/whatsapp` or `/api/v1/ai-chat` route family for webhook, activation, verification, and chat handling
+  - verify Meta webhook challenge/signature, deduplicate inbound messages by Meta message id, and block forged or replayed webhook payloads
+  - store Meta/provider credentials server-side only, preferably in SSM SecureString/config; never expose keys to frontend code
+  - use Pydantic models for webhook payloads, chat request/response payloads, tool arguments, tool outputs, provider replies, redacted order DTOs, validation results, and human-handoff payloads
+  - use Pydantic for API/DTO validation around database data; keep Alembic migrations, SQLAlchemy models, and database constraints as the actual database schema enforcement layer
+  - suggested supporting tables include `whatsapp_message_events` for webhook idempotency/replay protection, `ai_chat_sessions`, `ai_chat_messages`, and `ai_chat_handoffs`
+- Reuse boundaries:
+  - reusable pieces are the WhatsApp webhook pattern, LLM gateway, ReAct runner, retention framework, guardrail framework, logging, DTO validation, and handoff pattern
+  - not zero-configuration for every database-backed app; each app must provide a safe domain adapter that enforces its own authorization rules and exposes only approved customer-facing fields
+  - Ashmi's first domain adapter should wrap existing order service methods instead of giving the model direct database access
+- LLM provider strategy:
+  - use a provider-agnostic LLM gateway
+  - the gateway should run a constrained ReAct turn, not a free-form autonomous database agent
+  - development evaluation priority is NVIDIA NIM free prototype first, Hugging Face open-weight model second, and OpenAI only as fallback/benchmark
+  - consider OpenAI for production only if quality, reliability, support, compliance, and total-cost checks justify the paid dependency
+  - provider pricing, model availability, free credits, and retention controls are external facts and must be rechecked before production decisions
+- ReAct agent direction:
+  - ReAct is the reasoning/action pattern, not permission to access the database freely
+  - the model may reason about which fact is needed, but the `Act` step may call only approved backend tools
+  - the `Observe` step must receive only Pydantic-validated, redacted, user-scoped DTOs from backend services
+  - the `Validate` step must compare the draft answer against observed tool facts and customer-facing policy before replying
+  - phase 1 should cap ReAct at two Act/Observe tool rounds per customer message, then answer from observed facts or hand off to human review
+  - do not expose raw chain-of-thought, hidden reasoning, system prompts, developer instructions, or internal validation details to customers; a short customer-safe rationale such as "I checked your order record" is acceptable
+- Guardrail and hallucination rules:
+  - the model may answer order facts only from backend tool results or approved customer-facing policy text
+  - no direct SQL, generic database query tool, ORM session, admin endpoint, unrestricted API tool, schema-inspection tool, or company-info lookup tool may be exposed to the model
+  - allow only narrow phase-1 tools such as `list_recent_orders`, `get_order_summary`, `get_delivery_status`, `get_order_timeline`, `get_invoice_status`, `get_cancellation_options`, and `get_refund_status`
+  - tool arguments must be schema-validated, and backend tools must enforce customer ownership even if the model asks for another user's order
+  - redact internal IDs where unnecessary, payment gateway raw payloads, internal admin notes, SSM names, Lambda names, secrets, cost/margin data, supplier details, fraud signals, phone, email, and full address before sending data to the model
+  - output validation must block unsupported delivery, refund, payment, tracking, invoice, or order-status claims
+  - if tracking data, delivery confirmation, or expected delivery date is absent, the bot should say it cannot confirm that detail from the order record instead of inventing a tracking number or delivery promise
+- Company-information protection:
+  - the chatbot is a customer order-support assistant, not an admin assistant
+  - it must not reveal backend architecture, deployment details, database schema, credentials, source code, system prompts, provider keys, supplier/vendor details, business margins, company finances, company bank details, internal business policy, company location details not meant for customers, internal notes, fraud signals, or other customers' data
+- Chat context retention:
+  - preserve minimal chat context for the last 7 days only
+  - store Ashmi chat context in Neon with `expires_at` and cleanup expired sessions/messages/tool payloads automatically
+  - do not rely on provider-hosted conversation/thread storage for the 7-day business requirement
+  - old chat context may help resolve references such as "that order" only within 7 days, but fresh order/payment/delivery facts must still be fetched from backend tools before answering
+  - delete expired chat history without deleting order, invoice, payment, return, refund, or audit records
+- Human-in-loop:
+  - create a support/admin review record for authentication failure, provider failure, tool failure, ambiguous data, missing/uncertain ETA, repeated output-validator block, refund/cancellation dispute, or explicit customer request for human help
+  - show a safe customer message instead of letting the model guess in exception cases
+- Security parameters to check during build:
+  - `AI_CHAT_ENABLED` or `WHATSAPP_AI_CHAT_ENABLED` feature flag defaults off outside approved dev/test
+  - CORS/trusted-origin and CSRF behavior must match the existing backend security pattern for credentialed writes
+  - per-user, per-phone, and per-IP rate limits, daily message caps, provider timeout, max input messages, max output tokens, and fallback-attempt limits must be configured before enabling live usage
+  - ReAct loop execution must enforce the max tool-round limit and block unapproved tool names or invalid tool arguments
+  - provider keys must be stored server-side only, preferably in SSM SecureString parameters such as `META_WHATSAPP_TOKEN_PARAM`, `META_WHATSAPP_APP_SECRET_PARAM`, `NVIDIA_NIM_API_KEY_PARAM`, `HF_TOKEN_PARAM`, and `OPENAI_API_KEY_PARAM`
+  - logs should include request id, user id hash, WhatsApp id hash, session id, provider, model, selected intent, tool name, validation result, failure reason, latency, and token counts, but not raw chain-of-thought, secrets, full WhatsApp number, full payment payloads, or unnecessary PII
+  - test prompt injection, external data injection through WhatsApp text, sensitive information disclosure, excessive agency, system-prompt leakage, misinformation/hallucination, webhook replay, authentication bypass, and unbounded consumption scenarios before SG dev sign-off
 
 ### Payment idempotency workflow
 
@@ -171,6 +300,11 @@ Use idempotency to ensure that one intended payment operation creates one busine
   - root cause observed: `db5l55bfhn85l.cloudfront.net` did not yet have `ashmi-dev-assets-sg` as an origin and did not have a `/uploads/*` behavior
   - fix applied: add `ashmi-dev-assets-sg` as a CloudFront origin on distribution `E3TY6IMS9QZRVN`, create behavior `/uploads/*` above `Default (*)`, route it to the assets bucket origin, use Origin Access Control, update `ashmi-dev-assets-sg` bucket policy to allow CloudFront service principal with `AWS:SourceArn=arn:aws:cloudfront::762813627344:distribution/E3TY6IMS9QZRVN`, and invalidate `/uploads/*`
   - expected healthy processed image response is `Status Code: 200 OK` with `Content-Type: image/webp`
+- CDN render validation for admin product images passed on 2026-08-31 IST:
+  - after adding frontend tab persistence in [frontend/src/pages/admin/ProductForm.jsx](C:/Ashmiwebportal/frontend/src/pages/admin/ProductForm.jsx), refreshing the product edit page with the Images tab selected kept focus on `Images`
+  - processed image requests under `https://db5l55bfhn85l.cloudfront.net/uploads/processed/...` returned `200 OK`
+  - response headers showed `Content-Type: image/webp`, `Cache-Control: public, max-age=31536000, immutable`, and a non-empty image content length
+  - Chrome DevTools Preview rendered the actual processed product image, confirming CloudFront served image bytes rather than frontend HTML
 
 ## Local Runtime Rules
 

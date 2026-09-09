@@ -69,7 +69,11 @@ class Settings(BaseSettings):
 
     # ────────────────── Encryption (PII at rest) ──────────────────
     PII_ENCRYPTION_KEY: str = ""  # AES-256 key, base64 encoded
-    
+    # ────────────────── WhatsApp Cloud API  ──────────────────
+    META_WHATSAPP_WEBHOOK_VERIFY_TOKEN: str = ""
+    META_WHATSAPP_WEBHOOK_VERIFY_TOKEN_PARAM: str = ""
+    META_WHATSAPP_APP_SECRET: str = ""
+    META_WHATSAPP_APP_SECRET_PARAM: str = ""
 
 
     # ────────────────── Business Config ──────────────────
@@ -150,6 +154,21 @@ class Settings(BaseSettings):
             self.IMAGE_CALLBACK_SECRET,
             self.IMAGE_CALLBACK_SECRET_PARAM,
             "IMAGE_CALLBACK_SECRET",
+        )
+    @property
+    def resolved_meta_whatsapp_webhook_verify_token(self) -> str:
+        return self._resolve_secret(
+            self.META_WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+            self.META_WHATSAPP_WEBHOOK_VERIFY_TOKEN_PARAM,
+            "META_WHATSAPP_WEBHOOK_VERIFY_TOKEN",
+        )
+
+    @property
+    def resolved_meta_whatsapp_app_secret(self) -> str:
+        return self._resolve_secret(
+            self.META_WHATSAPP_APP_SECRET,
+            self.META_WHATSAPP_APP_SECRET_PARAM,
+            "META_WHATSAPP_APP_SECRET",
         )
     class Config:
         env_file = ".env"

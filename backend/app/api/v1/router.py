@@ -9,6 +9,7 @@ from app.api.v1.endpoints.totp import router as totp_router
 from app.api.v1.endpoints.admin_products import router as admin_products_router
 from app.api.v1.endpoints.admin_images import router as admin_images_router
 from app.api.v1.endpoints.catalog import router as catalog_router
+
 from app.api.v1.endpoints.wishlist_reviews import (
     review_router,
     admin_review_router,
@@ -98,3 +99,6 @@ api_v1_router.include_router(user_profile_router)
 # Phase 13H: Store Settings
 from app.api.v1.endpoints.admin_settings import router as admin_settings_router
 api_v1_router.include_router(admin_settings_router)
+# WhatsApp Cloud API webhook
+from app.api.v1.endpoints.whatsapp import router as whatsapp_router
+api_v1_router.include_router(whatsapp_router)
